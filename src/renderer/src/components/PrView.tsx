@@ -1,13 +1,15 @@
-import { DiffEditor } from '@monaco-editor/react'
-import { useEffect, useMemo, useState } from 'react'
-import type { ChangedFile, FileDiff, PullDetail, WorktreeInfo } from '../../../shared/types'
-import { languageFor } from '../monaco'
+import { DiffEditor, type DiffOnMount } from '@monaco-editor/react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ChangedFile, FileDiff, GuideFile, PullDetail, ReviewGuide, WorktreeInfo } from '../../../shared/types'
+import { languageFor, monaco } from '../monaco'
 import { errorText, storage } from '../util'
+import { FileList } from './FileList'
+import { GuidePanel } from './GuidePanel'
 import { ReviewBox } from './ReviewBox'
 
 const api = window.diffscope
 
-const STATUS_LABEL: Record<string, string> = { A: 'added', M: 'modified', D: 'deleted', R: 'renamed', C: 'copied', T: 'type changed' }
+type DiffEditorInstance = Parameters<DiffOnMount>[0]
 
 function usePrefersDark(): boolean {
   const query = '(prefers-color-scheme: dark)'
@@ -27,8 +29,14 @@ export function PrView({ repo, number }: { repo: string; number: number }) {
   const [error, setError] = useState<string | null>(null)
   const [file, setFile] = useState<ChangedFile | null>(null)
   const [diff, setDiff] = useState<FileDiff | null>(null)
+  const [guide, setGuide] = useState<ReviewGuide | null>(null)
+  const [guideBusy, setGuideBusy] = useState(false)
+  const [guideError, setGuideError] = useState<string | null>(null)
+  const [guideOpen, setGuideOpen] = useState(() => storage.get('ui.guideOpen', true))
   const [sideBySide, setSideBySide] = useState(() => storage.get('ui.sideBySide', true))
   const [hideWhitespace, setHideWhitespace] = useState(() => storage.get('ui.hideWhitespace', true))
+  const [editor, setEditor] = useState<DiffEditorInstance | null>(null)
+  const pendingReveal = useRef<number | null>(null)
   const dark = usePrefersDark()
 
   // "Viewed" marks are tied to the PR head commit: new commits reset them.
@@ -38,9 +46,13 @@ export function PrView({ repo, number }: { repo: string; number: number }) {
   useEffect(() => {
     api.pulls.get(repo, number).then(setPull, (err) => setError(errorText(err)))
     api.worktree.prepare(repo, number).then(
-      (t) => {
+      async (t) => {
         setTree(t)
-        setFile(t.files[0] ?? null)
+        const saved = await api.guide.get(repo, number)
+        setGuide(saved)
+        // Start with the first file of the reading order, else the first file that isn't noise.
+        const first = saved?.files[0]?.path
+        setFile(t.files.find((f) => f.path === first) ?? t.files.find((f) => !f.noise) ?? t.files[0] ?? null)
       },
       (err) => setError(errorText(err))
     )
@@ -63,12 +75,73 @@ export function PrView({ repo, number }: { repo: string; number: number }) {
     }
   }, [repo, number, file])
 
+  const guideFile: GuideFile | undefined = useMemo(
+    () => guide?.files.find((g) => g.path === file?.path),
+    [guide, file]
+  )
+
+  // Highlight the guide's focus lines in the new version of the file.
+  useEffect(() => {
+    if (!editor || !diff || diff.skipped) return
+    const modified = editor.getModifiedEditor()
+    const collection = modified.createDecorationsCollection(
+      (guideFile?.focus ?? []).map((f) => ({
+        range: new monaco.Range(f.line, 1, f.line, 1),
+        options: {
+          isWholeLine: true,
+          className: 'focus-line',
+          glyphMarginClassName: 'focus-glyph',
+          hoverMessage: { value: `**Focus:** ${f.note}` }
+        }
+      }))
+    )
+    if (pendingReveal.current) {
+      const line = pendingReveal.current
+      pendingReveal.current = null
+      // Wait one frame so the new model is laid out before scrolling.
+      requestAnimationFrame(() => {
+        modified.revealLineInCenter(line)
+        modified.setPosition({ lineNumber: line, column: 1 })
+      })
+    }
+    return () => collection.clear()
+  }, [editor, diff, guideFile])
+
   function toggleViewed(path: string) {
     const next = new Set(viewed)
     if (next.has(path)) next.delete(path)
     else next.add(path)
     setViewed(next)
     if (viewedKey) storage.set(viewedKey, [...next])
+  }
+
+  /** Opens a file and scrolls to a line once its diff has loaded. */
+  function goTo(path: string, line: number | null) {
+    const target = tree?.files.find((f) => f.path === path)
+    if (!target) return
+    if (target.path === file?.path && line && editor) {
+      const modified = editor.getModifiedEditor()
+      modified.revealLineInCenter(line)
+      modified.setPosition({ lineNumber: line, column: 1 })
+      return
+    }
+    pendingReveal.current = line
+    setFile(target)
+  }
+
+  async function generateGuide() {
+    setGuideBusy(true)
+    setGuideError(null)
+    try {
+      const g = await api.guide.generate(repo, number)
+      setGuide(g)
+      // The worktree was refreshed; pick up new commits if any.
+      if (tree && g.headSha !== tree.headSha) setTree(await api.worktree.prepare(repo, number))
+    } catch (err) {
+      setGuideError(errorText(err))
+    } finally {
+      setGuideBusy(false)
+    }
   }
 
   const language = useMemo(() => (file ? languageFor(file.path) : 'plaintext'), [file])
@@ -93,6 +166,15 @@ export function PrView({ repo, number }: { repo: string; number: number }) {
           <button disabled={!tree} onClick={() => api.worktree.reveal(repo, number).catch((e) => setError(errorText(e)))}>
             Open worktree folder
           </button>
+          <button
+            className={guideOpen ? 'active-toggle' : ''}
+            onClick={() => {
+              setGuideOpen(!guideOpen)
+              storage.set('ui.guideOpen', !guideOpen)
+            }}
+          >
+            Guide {guideOpen ? '▸' : '◂'}
+          </button>
         </div>
       </div>
 
@@ -109,31 +191,14 @@ export function PrView({ repo, number }: { repo: string; number: number }) {
       {tree && (
         <div className="review-area">
           <div className="files">
-            <div className="files-header small muted">
-              {viewed.size}/{tree.files.length} viewed
-              <div className="progress">
-                <div style={{ width: `${tree.files.length ? (viewed.size / tree.files.length) * 100 : 0}%` }} />
-              </div>
-            </div>
-            <ul>
-              {tree.files.map((f) => (
-                <li key={f.path} className={f === file ? 'active' : ''}>
-                  <input
-                    type="checkbox"
-                    title="Mark as viewed"
-                    checked={viewed.has(f.path)}
-                    onChange={() => toggleViewed(f.path)}
-                  />
-                  <button className={`file ${viewed.has(f.path) ? 'viewed' : ''}`} onClick={() => setFile(f)} title={f.path}>
-                    <span className={`status s-${f.status}`} title={STATUS_LABEL[f.status]}>
-                      {f.status}
-                    </span>
-                    <span className="file-name">{f.path.split('/').pop()}</span>
-                    <span className="file-dir">{f.path.split('/').slice(0, -1).join('/')}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <FileList
+              files={tree.files}
+              guide={guide}
+              selected={file}
+              viewed={viewed}
+              onSelect={setFile}
+              onToggleViewed={toggleViewed}
+            />
             {pull && <ReviewBox repo={repo} number={number} />}
           </div>
 
@@ -166,6 +231,23 @@ export function PrView({ repo, number }: { repo: string; number: number }) {
                 Hide whitespace changes
               </label>
             </div>
+
+            {file?.noise && <div className="file-note noise-note small">Skippable: {file.noise.reason}</div>}
+            {guideFile && (
+              <div className={`file-note small risk-${guideFile.risk}`}>
+                <strong>{guideFile.risk} risk</strong> · {guideFile.role} — {guideFile.why}
+                {guideFile.focus.length > 0 && (
+                  <span className="focus-links">
+                    {guideFile.focus.map((f) => (
+                      <button key={f.line} className="link" title={f.note} onClick={() => goTo(guideFile.path, f.line)}>
+                        L{f.line}
+                      </button>
+                    ))}
+                  </span>
+                )}
+              </div>
+            )}
+
             {!file && <div className="center muted">This PR has no file changes.</div>}
             {file && !diff && <div className="center muted">Loading file…</div>}
             {diff?.skipped && (
@@ -179,6 +261,7 @@ export function PrView({ repo, number }: { repo: string; number: number }) {
                 originalModelPath={`base/${tree.mergeBase}/${file.oldPath ?? file.path}`}
                 modifiedModelPath={`head/${tree.headSha}/${file.path}`}
                 theme={dark ? 'vs-dark' : 'vs'}
+                onMount={(ed) => setEditor(ed)}
                 options={{
                   readOnly: true,
                   originalEditable: false,
@@ -186,6 +269,7 @@ export function PrView({ repo, number }: { repo: string; number: number }) {
                   ignoreTrimWhitespace: hideWhitespace,
                   automaticLayout: true,
                   minimap: { enabled: false },
+                  glyphMargin: true,
                   scrollBeyondLastLine: false,
                   renderOverviewRuler: true,
                   // Fold long runs of unchanged lines so the focus stays on what changed.
@@ -194,6 +278,17 @@ export function PrView({ repo, number }: { repo: string; number: number }) {
               />
             )}
           </div>
+
+          {guideOpen && (
+            <GuidePanel
+              guide={guide}
+              stale={!!guide && guide.headSha !== tree.headSha}
+              busy={guideBusy}
+              error={guideError}
+              onGenerate={generateGuide}
+              onGoTo={goTo}
+            />
+          )}
         </div>
       )}
     </div>

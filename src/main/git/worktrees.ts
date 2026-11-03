@@ -11,6 +11,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ChangedFile, FileDiff, FileStatus, WorktreeInfo } from '../../shared/types'
+import { classify, parseCheckAttr, parseNumstat, type NoiseInput } from '../review/noise'
 import { dataDir } from '../store'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024
@@ -113,15 +114,30 @@ export class WorktreeManager {
         await git(['checkout', '--detach', headSha], wt, this.token())
       }
 
-      const files = parseNameStatus(await git(['diff', '--name-status', '-z', '-M', mergeBase, headSha], dir, this.token()))
+      const range = [mergeBase, headSha]
+      const [nameStatus, numstat, numstatNoWs] = await Promise.all([
+        git(['diff', '--name-status', '-z', '-M', ...range], dir, this.token()),
+        git(['diff', '--numstat', '-z', '-M', ...range], dir, this.token()),
+        git(['diff', '--numstat', '-z', '-M', '-w', '--ignore-blank-lines', ...range], dir, this.token())
+      ])
+      const raw = parseNameStatus(nameStatus)
+      // .gitattributes rules are read from the PR worktree.
+      const attrs = raw.length
+        ? await git(['check-attr', '-z', 'linguist-generated', '--', ...raw.map((f) => f.path)], wt)
+        : ''
+      const files = classify({
+        files: raw,
+        numstat: parseNumstat(numstat),
+        numstatNoWhitespace: parseNumstat(numstatNoWs),
+        linguistGenerated: parseCheckAttr(attrs)
+      })
       this.refs.set(`${repo}#${number}`, { headSha, mergeBase })
       return { path: wt, headSha, mergeBase, files }
     })
   }
 
   async fileDiff(repo: string, number: number, file: ChangedFile): Promise<FileDiff> {
-    const refs = this.refs.get(`${repo}#${number}`)
-    if (!refs) throw new Error('Prepare the PR worktree first')
+    const refs = this.requireRefs(repo, number)
     const dir = this.repoDir(repo)
 
     type Side = { text: string; skipped?: FileDiff['skipped'] }
@@ -141,6 +157,32 @@ export class WorktreeManager {
     return skipped ? { original: '', modified: '', skipped } : { original: before.text, modified: after.text }
   }
 
+  private requireRefs(repo: string, number: number): PrRefs {
+    const refs = this.refs.get(`${repo}#${number}`)
+    if (!refs) throw new Error('Prepare the PR worktree first')
+    return refs
+  }
+
+  /** Unified diff of one file, mergeBase -> head. */
+  async unifiedDiff(repo: string, number: number, file: ChangedFile, context = 5): Promise<string> {
+    const { mergeBase, headSha } = this.requireRefs(repo, number)
+    const paths = file.oldPath ? [file.oldPath, file.path] : [file.path]
+    return git(['diff', `-U${context}`, '-M', mergeBase, headSha, '--', ...paths], this.repoDir(repo), this.token())
+  }
+
+  /** Commit messages of the PR, oldest first. */
+  async commitLog(repo: string, number: number, max = 50): Promise<string> {
+    const { mergeBase, headSha } = this.requireRefs(repo, number)
+    return git(
+      ['log', '--reverse', `--max-count=${max}`, '--format=- %s%n%b', `${mergeBase}..${headSha}`],
+      this.repoDir(repo)
+    )
+  }
+
+  headSha(repo: string, number: number): string | null {
+    return this.refs.get(`${repo}#${number}`)?.headSha ?? null
+  }
+
   remove(repo: string, number: number): Promise<void> {
     return this.withLock(repo, async () => {
       const wt = this.worktreeDir(repo, number)
@@ -150,15 +192,16 @@ export class WorktreeManager {
   }
 }
 
-/** Parses `git diff --name-status -z` output. Renames and copies carry two paths. */
-function parseNameStatus(out: string): ChangedFile[] {
+/** Parses `git diff --name-status -z` output. Renames and copies carry two paths and a similarity score (R100 = identical). */
+function parseNameStatus(out: string): NoiseInput['files'] {
   const parts = out.split('\0').filter(Boolean)
-  const files: ChangedFile[] = []
+  const files: NoiseInput['files'] = []
   for (let i = 0; i < parts.length; ) {
-    const status = parts[i++][0] as FileStatus
+    const code = parts[i++]
+    const status = code[0] as FileStatus
     if (status === 'R' || status === 'C') {
       const oldPath = parts[i++]
-      files.push({ status, oldPath, path: parts[i++] })
+      files.push({ status, oldPath, path: parts[i++], similarity: Number(code.slice(1)) || undefined })
     } else {
       files.push({ status, path: parts[i++] })
     }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AccessIssue, GhUser, PrNotification, Repo } from '../../../shared/types'
 import { errorText, timeAgo } from '../util'
+import { AiSettingsDialog } from './AiSettingsDialog'
 
 const api = window.diffscope
 
@@ -30,6 +31,7 @@ export function TopBar({ user, repo, onSelectRepo, notifications, onOpenNotifica
   const [query, setQuery] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [bellOpen, setBellOpen] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
   const barRef = useRef<HTMLDivElement>(null)
 
   function loadRepos() {
@@ -170,6 +172,11 @@ export function TopBar({ user, repo, onSelectRepo, notifications, onOpenNotifica
           </div>
         )}
       </div>
+
+      <button className="bell" title="AI settings" onClick={() => setAiOpen(true)}>
+        ⚙
+      </button>
+      {aiOpen && <AiSettingsDialog onClose={() => setAiOpen(false)} />}
 
       <img className="avatar" src={user.avatarUrl} alt="" title={user.login} />
       <button className="link small" onClick={onLogout}>

@@ -1,12 +1,14 @@
 import { app, BrowserWindow, ipcMain, Notification, shell } from 'electron'
 import { join } from 'node:path'
-import type { AuthState, ChangedFile, GhUser, PrNotification, ReviewEvent } from '../shared/types'
+import type { AiSettings, AuthState, ChangedFile, GhUser, PrNotification, ReviewEvent } from '../shared/types'
 import { GitHub } from './github/api'
 import { cancelDeviceFlow, CLIENT_ID, startDeviceFlow, waitForDeviceFlow } from './github/auth'
 import { NotificationPoller } from './github/notifications'
 import { getPull, getViewer, listPulls, listRepos, submitReview } from './github/pulls'
 import { WorktreeManager } from './git/worktrees'
-import { clearToken, loadSettings, loadToken, saveSettings, saveToken } from './store'
+import { API_KEY_SECRET, getAiSettings, saveAiSettings } from './ai/provider'
+import { generateGuide, loadGuide, testProvider } from './review/guide'
+import { clearSecret, clearToken, loadSettings, loadToken, saveSecret, saveSettings, saveToken } from './store'
 
 // ---- Session state (one signed-in GitHub account) ----
 
@@ -136,6 +138,34 @@ function registerIpc(): void {
   handle('notifications:list', () => poller?.list() ?? [])
   handle('notifications:markRead', (id: string) => poller?.markRead(id))
 
+  handle('ai:getSettings', () => getAiSettings())
+  handle('ai:saveSettings', (settings: Omit<AiSettings, 'hasApiKey'>, apiKey?: string | null) => {
+    saveAiSettings(settings)
+    if (apiKey === null) clearSecret(API_KEY_SECRET)
+    else if (typeof apiKey === 'string' && apiKey.trim()) {
+      if (!saveSecret(API_KEY_SECRET, apiKey.trim())) throw new Error('No system keyring available to store the API key safely.')
+    }
+    return getAiSettings()
+  })
+  handle('ai:test', async () => {
+    try {
+      return { ok: true, detail: await testProvider() }
+    } catch (err) {
+      return { ok: false, detail: (err as Error).message }
+    }
+  })
+
+  handle('guide:get', (repo: string, number: number) => {
+    const head = worktrees.headSha(repo, number)
+    return head ? loadGuide(repo, number, head) : null
+  })
+  handle('guide:generate', async (repo: string, number: number) => {
+    const { gh, me } = requireGh()
+    const { baseSha: _baseSha, ...pull } = await getPull(gh, repo, number, me)
+    const tree = await worktrees.prepare(repo, number, pull.baseRef)
+    return generateGuide(gh, worktrees, pull, tree.files, tree.headSha)
+  })
+
   handle('openExternal', (url: string) => {
     if (!/^https:\/\//.test(url)) throw new Error('Only https links can be opened')
     return shell.openExternal(url)
@@ -148,7 +178,7 @@ function createWindow(): void {
   win = new BrowserWindow({
     width: 1400,
     height: 900,
-    minWidth: 900,
+    minWidth: 1100,
     minHeight: 600,
     title: 'Diffscope',
     show: false,

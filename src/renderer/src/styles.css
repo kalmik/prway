@@ -12,6 +12,10 @@
   --del: #cf222e;
   --warn-bg: #fff8c5;
   --hot: #bf3989;
+  --risk-high: #cf222e;
+  --risk-medium: #bf8700;
+  --risk-low: #1a7f37;
+  --focus-bg: rgba(191, 135, 0, 0.16);
   color-scheme: light;
 }
 
@@ -30,6 +34,10 @@
     --del: #f85149;
     --warn-bg: #3b2e00;
     --hot: #db61a2;
+    --risk-high: #f85149;
+    --risk-medium: #d29922;
+    --risk-low: #3fb950;
+    --focus-bg: rgba(210, 153, 34, 0.18);
     color-scheme: dark;
   }
 }
@@ -539,4 +547,219 @@ ul {
 .diff > section {
   flex: 1;
   min-height: 0;
+}
+
+/* ---- File list groups ---- */
+.file-list {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+.files ul {
+  flex: none;
+  overflow: visible;
+}
+.order {
+  font-size: 10px;
+  color: var(--muted);
+  width: 14px;
+  text-align: right;
+}
+.file-stat {
+  margin-left: auto;
+  font-size: 10px;
+  white-space: nowrap;
+  padding-left: 6px;
+}
+.group-toggle {
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg-soft);
+  padding: 6px 10px;
+}
+.skipped li {
+  opacity: 0.75;
+}
+.noise-tag {
+  font-size: 9px;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 3px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.risk-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.risk-dot.risk-high {
+  background: var(--risk-high);
+}
+.risk-dot.risk-medium {
+  background: var(--risk-medium);
+}
+.risk-dot.risk-low {
+  background: var(--risk-low);
+}
+
+/* ---- Notes above the diff ---- */
+.file-note {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  background: var(--bg-soft);
+}
+.file-note.risk-high {
+  border-left-color: var(--risk-high);
+}
+.file-note.risk-medium {
+  border-left-color: var(--risk-medium);
+}
+.file-note.risk-low {
+  border-left-color: var(--risk-low);
+}
+.noise-note {
+  color: var(--muted);
+}
+.focus-links {
+  margin-left: 8px;
+  display: inline-flex;
+  gap: 8px;
+}
+.focus-line {
+  background: var(--focus-bg);
+}
+.focus-glyph {
+  background: var(--risk-medium);
+  border-radius: 50%;
+  width: 8px !important;
+  height: 8px !important;
+  margin: 6px 0 0 6px;
+}
+
+/* ---- Guide panel ---- */
+.guide {
+  width: 340px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-soft);
+}
+.guide-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.guide-body {
+  overflow: auto;
+  padding: 4px 12px 12px;
+}
+.guide section {
+  margin-top: 12px;
+}
+.guide h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.guide p {
+  margin: 0 0 4px;
+}
+.bullets,
+.reading {
+  padding-left: 18px;
+  list-style: disc;
+}
+.reading {
+  list-style: decimal;
+}
+.bullets li,
+.reading li,
+.rules li {
+  margin-bottom: 6px;
+}
+.rules li {
+  border-left: 2px solid var(--risk-medium);
+  padding-left: 8px;
+}
+.mismatch {
+  background: var(--warn-bg);
+  border-radius: 6px;
+  padding: 8px;
+}
+.mismatch h4 {
+  color: var(--text);
+}
+.warn-box {
+  background: var(--warn-bg);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-top: 8px !important;
+}
+button.active-toggle {
+  background: var(--bg-active);
+}
+
+/* ---- Dialog ---- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dialog {
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg);
+}
+.dialog h3,
+.dialog p {
+  margin: 0;
+}
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 0;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.radio {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.field .row input {
+  flex: 1;
+}
+.block {
+  display: block;
+}
+.row.end {
+  justify-content: flex-end;
 }

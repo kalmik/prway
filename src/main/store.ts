@@ -3,12 +3,15 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
+import type { AiEffort, AiProviderId } from '../shared/types'
+
 interface Settings {
   selectedRepo?: string
+  ai?: { provider: AiProviderId; model: string; effort: AiEffort }
 }
 
 const settingsFile = () => join(app.getPath('userData'), 'settings.json')
-const tokenFile = () => join(app.getPath('userData'), 'github-token.bin')
+const secretFile = (name: string) => join(app.getPath('userData'), `${name}.bin`)
 
 /** Where Diffscope keeps its clones and PR worktrees. Visible on purpose, so you can open them in an IDE. */
 export const dataDir = join(homedir(), '.diffscope')
@@ -27,23 +30,27 @@ export function saveSettings(patch: Partial<Settings>): void {
   writeFileSync(settingsFile(), JSON.stringify(next, null, 2))
 }
 
-/** Saves the token encrypted with the OS keyring. Returns false if no keyring is available (token stays in memory only). */
-export function saveToken(token: string): boolean {
+/** Saves a secret encrypted with the OS keyring. Returns false if no keyring is available (then nothing is written). */
+export function saveSecret(name: string, value: string): boolean {
   if (!safeStorage.isEncryptionAvailable()) return false
   mkdirSync(app.getPath('userData'), { recursive: true })
-  writeFileSync(tokenFile(), safeStorage.encryptString(token), { mode: 0o600 })
+  writeFileSync(secretFile(name), safeStorage.encryptString(value), { mode: 0o600 })
   return true
 }
 
-export function loadToken(): string | null {
-  if (!existsSync(tokenFile()) || !safeStorage.isEncryptionAvailable()) return null
+export function loadSecret(name: string): string | null {
+  if (!existsSync(secretFile(name)) || !safeStorage.isEncryptionAvailable()) return null
   try {
-    return safeStorage.decryptString(readFileSync(tokenFile()))
+    return safeStorage.decryptString(readFileSync(secretFile(name)))
   } catch {
     return null
   }
 }
 
-export function clearToken(): void {
-  rmSync(tokenFile(), { force: true })
+export function clearSecret(name: string): void {
+  rmSync(secretFile(name), { force: true })
 }
+
+export const saveToken = (token: string) => saveSecret('github-token', token)
+export const loadToken = () => loadSecret('github-token')
+export const clearToken = () => clearSecret('github-token')

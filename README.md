@@ -42,6 +42,40 @@ The token is encrypted with your system keyring (Electron `safeStorage`). The UI
   and clicking one opens that PR.
 - "Open worktree folder" opens the PR checkout, so you can also open it in your IDE.
 
+## Noise filter (no AI)
+
+Files that don't need a careful read are grouped under a collapsed **Skip** section:
+
+| Kind | Rule |
+|---|---|
+| generated | lockfiles, `dist/`, `build/`, `vendor/`, snapshots, `*.min.js`, `*.map`, protobuf output…, and anything marked `linguist-generated` in `.gitattributes` |
+| rename-only | renamed or moved with no content change (or only whitespace changes) |
+| formatting-only | the diff disappears when whitespace and blank lines are ignored |
+
+Rules live in `src/main/review/noise.ts`.
+
+## AI review guide
+
+Click **Generate** in the Guide panel. Claude reads the PR description, linked issues (`#123`), commit messages and
+the diffs of the non-noise files, and returns:
+
+- the **intent** of the PR and where it came from (issue, description, commits, or inferred)
+- **business rules** that changed (before → after), with a link to the line
+- **changes not explained by the intent**
+- a **reading order** with a risk level per file, and **focus lines** highlighted in the diff
+- questions to ask the author
+
+Guides are saved per head commit in `~/.diffscope/guides/`, and you can regenerate after new commits.
+
+**Choosing the AI (⚙ in the top bar):**
+
+- **Claude Code (default):** runs on your Claude subscription through the `claude` CLI already signed in on this
+  computer. The CLI runs with all tools, MCP servers and user settings turned off, so it only reads the prompt.
+- **Anthropic API key:** billed per token. The key is encrypted with your system keyring.
+- Model (Opus 5.5 by default) and effort (default `high`).
+
+New providers can be added by implementing `AiProvider` in `src/main/ai/`.
+
 ## Where things live
 
 ```
@@ -65,7 +99,6 @@ src/renderer/src/            React UI (App, TopBar, PrList, PrView, ReviewBox)
 
 1. Inline review comments on diff lines (GitHub's pending review API).
 2. Code navigation inside the worktree: tree-sitter symbols first, then language servers (LSP) for exact jumps.
-3. Noise filter: detect formatting-only changes, moved code and generated files, and group them as "skip".
-4. AI review guide: intent of the change, reading order, hot spots, and where the business rules change.
-5. Context panel: history of the changed functions (past PRs and their review discussions) and who calls them.
-6. Knowledge base: save decisions and business rules from each merged PR and show them on future PRs.
+3. Noise filter, next level: detect moved code inside files and formatting changes beyond whitespace (AST compare).
+4. Context panel: history of the changed functions (past PRs and their review discussions) and who calls them.
+5. Knowledge base: save decisions and business rules from each merged PR and show them on future PRs.

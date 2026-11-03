@@ -8,6 +8,8 @@ import { loader } from '@monaco-editor/react'
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() }
 loader.config({ monaco })
 
+export { monaco }
+
 /** Picks a Monaco language id from a file path, e.g. "src/a.ts" -> "typescript". */
 export function languageFor(path: string): string {
   const name = path.split('/').pop()?.toLowerCase() ?? ''

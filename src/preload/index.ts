@@ -44,6 +44,15 @@ const api: DiffscopeApi = {
     list: call('notifications:list'),
     markRead: call('notifications:markRead')
   },
+  ai: {
+    getSettings: call('ai:getSettings'),
+    saveSettings: call('ai:saveSettings'),
+    test: call('ai:test')
+  },
+  guide: {
+    get: call('guide:get'),
+    generate: call('guide:generate')
+  },
   openExternal: call('openExternal'),
   onNotifications: (cb) => subscribe<PrNotification[]>('notifications', cb),
   onOpenPr: (cb) => subscribe<OpenPrRequest>('open-pr', cb)

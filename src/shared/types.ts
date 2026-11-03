@@ -66,10 +66,74 @@ export interface PullDetail extends PullSummary {
 /** Git name-status letters: Added, Modified, Deleted, Renamed, Copied, Type change. */
 export type FileStatus = 'A' | 'M' | 'D' | 'R' | 'C' | 'T'
 
+/** Why a file is considered noise: it doesn't need a careful read. */
+export type NoiseKind = 'generated' | 'rename-only' | 'formatting-only'
+
 export interface ChangedFile {
   path: string
   oldPath?: string
   status: FileStatus
+  /** Lines added/deleted; null for binary files. */
+  additions: number | null
+  deletions: number | null
+  /** Set when the noise filter says the file can be skipped. */
+  noise?: { kind: NoiseKind; reason: string }
+}
+
+// ---- AI review guide ----
+
+export type Risk = 'high' | 'medium' | 'low'
+
+export interface GuideFocus {
+  /** Line number in the new version of the file. */
+  line: number
+  note: string
+}
+
+export interface GuideFile {
+  path: string
+  risk: Risk
+  /** Short label such as "business rule", "core logic", "test", "config". */
+  role: string
+  why: string
+  focus: GuideFocus[]
+}
+
+export interface ReviewGuide {
+  intent: string
+  intentSource: 'linked-issue' | 'description' | 'commits' | 'inferred'
+  summary: string[]
+  businessRules: { path: string; line: number | null; rule: string; change: string }[]
+  /** Changes the stated intent doesn't explain. */
+  mismatches: string[]
+  /** Reviewable files in the suggested reading order. */
+  files: GuideFile[]
+  questions: string[]
+  // Filled in by Diffscope, not by the model:
+  headSha: string
+  provider: AiProviderId
+  model: string
+  createdAt: string
+  /** Files whose diff was too long and was cut before sending. */
+  truncatedFiles: string[]
+}
+
+// ---- AI provider settings ----
+
+export type AiProviderId = 'claude-code' | 'anthropic-api'
+export type AiEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+export interface AiSettings {
+  provider: AiProviderId
+  model: string
+  effort: AiEffort
+  /** Only for the anthropic-api provider; the key itself never reaches the UI. */
+  hasApiKey: boolean
+}
+
+export interface AiStatus {
+  ok: boolean
+  detail: string
 }
 
 export interface WorktreeInfo {
@@ -133,6 +197,17 @@ export interface DiffscopeApi {
   notifications: {
     list(): Promise<PrNotification[]>
     markRead(id: string): Promise<void>
+  }
+  ai: {
+    getSettings(): Promise<AiSettings>
+    /** apiKey: a string saves it, null deletes it, undefined leaves it unchanged. */
+    saveSettings(settings: Omit<AiSettings, 'hasApiKey'>, apiKey?: string | null): Promise<AiSettings>
+    test(): Promise<AiStatus>
+  }
+  guide: {
+    /** The saved guide for the PR's current head commit, if any. */
+    get(repo: string, number: number): Promise<ReviewGuide | null>
+    generate(repo: string, number: number): Promise<ReviewGuide>
   }
   openExternal(url: string): Promise<void>
   onNotifications(cb: (items: PrNotification[]) => void): () => void
