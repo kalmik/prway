@@ -47,18 +47,28 @@ function inline(text: string, props: Props, keyBase: string): ReactNode[] {
   return out
 }
 
-/** GitHub bodies (bots especially) carry HTML comments and tags; keep only their text. */
+/** One line of plain text for previews (collapsed threads). */
+export function plainPreview(text: string, max = 140): string {
+  const t = stripHtml(text.replace(/```[\s\S]*?```/g, ' ')).replace(/[*_`#>]/g, '').replace(/\s+/g, ' ').trim()
+  return t.length > max ? t.slice(0, max) + '…' : t
+}
+
+/** GitHub bodies (bots especially) carry HTML; keep only its text. Code blocks are left alone. */
 function stripHtml(text: string): string {
   return text
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/?(details|summary|p|div|span|sub|sup|b|i|em|strong|img|a|table|thead|tbody|tr|td|th|ul|ol|li|h\d|blockquote|code|pre)\b[^>]*>/gi, '')
+    .replace(/<\/?[a-zA-Z][\w-]*(?:\s[^<>]*)?\/?>/g, '')
+    .replace(/^\s*>\s?(\[!(\w+)\])?/gm, (_m, _a, kind?: string) => (kind ? `${kind.toUpperCase()}: ` : ''))
     .replace(/\n{3,}/g, '\n\n')
-    .trim()
 }
 
 export function Markdown(props: Props) {
-  const parts = stripHtml(props.text).split(/```[\w-]*\n?/)
+  const parts = props.text
+    .trim()
+    .split(/```[\w-]*\n?/)
+    // Inline `code` keeps its angle brackets too (e.g. `Array<string>`).
+    .map((part, i) => (i % 2 === 1 ? part : part.split(/(`[^`\n]+`)/).map((p, j) => (j % 2 ? p : stripHtml(p))).join('')))
   return (
     <div className="md">
       {parts.map((part, i) =>

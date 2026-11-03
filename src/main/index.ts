@@ -20,7 +20,9 @@ import {
   getViewer,
   listPulls,
   listRepos,
+  listConversation,
   listThreads,
+  postComment,
   replyToComment,
   setThreadResolved,
   submitReview
@@ -28,10 +30,23 @@ import {
 import { WorktreeManager } from './git/worktrees'
 import { CodeNavigator } from './code/navigator'
 import { KnowledgeBase } from './kb/knowledge'
+import { WorktreeCleanup } from './git/cleanup'
 import { API_KEY_SECRET, getAiSettings, saveAiSettings } from './ai/provider'
 import { chat } from './review/chat'
+import { Walkthroughs } from './review/walkthrough'
 import { generateGuide, loadGuide, relatedKnowledge, testProvider, type GuideDeps } from './review/guide'
-import { clearSecret, clearToken, loadSettings, loadToken, saveSecret, saveSettings, saveToken } from './store'
+import {
+  clearSecret,
+  clearToken,
+  flushUiState,
+  loadSettings,
+  loadToken,
+  loadUiState,
+  saveSecret,
+  saveSettings,
+  saveToken,
+  setUiState
+} from './store'
 
 // ---- Session state (one signed-in GitHub account) ----
 
@@ -43,6 +58,8 @@ let poller: NotificationPoller | null = null
 const worktrees = new WorktreeManager(() => gh?.token ?? null)
 const navigator = new CodeNavigator(worktrees, () => gh)
 const kb = new KnowledgeBase(worktrees, () => gh)
+const walkthroughs = new Walkthroughs(worktrees, navigator)
+const cleanup = new WorktreeCleanup(worktrees, kb, () => gh)
 /** Last prepared worktree per PR ("owner/name#n"). */
 const trees = new Map<string, WorktreeInfo>()
 
@@ -143,6 +160,10 @@ function registerIpc(): void {
   const handle = <A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>) =>
     ipcMain.handle(channel, (_event, ...args) => fn(...(args as A)))
 
+  // UI state: read once, synchronously, before the UI first renders; then written on every change.
+  ipcMain.on('state:loadAll', (e) => (e.returnValue = loadUiState()))
+  ipcMain.on('state:set', (_e, key: string, value: unknown) => setUiState(key, value))
+
   handle('auth:state', () => authState())
   handle('auth:startDeviceFlow', () => startDeviceFlow())
   handle('auth:waitForDeviceFlow', async () => signIn(await waitForDeviceFlow(), true))
@@ -172,6 +193,8 @@ function registerIpc(): void {
   handle('pulls:reply', (repo: string, number: number, commentId: number, body: string) =>
     replyToComment(requireGh().gh, repo, number, commentId, body)
   )
+  handle('pulls:conversation', (repo: string, number: number) => listConversation(requireGh().gh, repo, number))
+  handle('pulls:comment', (repo: string, number: number, body: string) => postComment(requireGh().gh, repo, number, body))
   handle('pulls:setResolved', (threadId: string, resolved: boolean) => setThreadResolved(requireGh().gh, threadId, resolved))
 
   handle('worktree:prepare', (repo: string, number: number) => prepare(repo, number))
@@ -180,6 +203,7 @@ function registerIpc(): void {
     const err = await shell.openPath(worktrees.worktreeDir(repo, number))
     if (err) throw new Error(err)
   })
+  handle('worktree:cleanup', (repo: string, keep?: number[], auto?: boolean) => cleanup.run(repo, keep ?? [], !!auto))
   handle('worktree:remove', (repo: string, number: number) => {
     trees.delete(`${repo}#${number}`)
     return worktrees.remove(repo, number)
@@ -204,6 +228,28 @@ function registerIpc(): void {
   handle('context:forFunction', async (repo: string, number: number, fn: ChangedFunction) => {
     await prepared(repo, number)
     return navigator.forFunction(repo, number, fn)
+  })
+
+  handle('review:hunks', async (repo: string, number: number) => {
+    await prepared(repo, number)
+    return walkthroughs.hunksForUi(repo, number)
+  })
+  handle('review:cachedWalkthrough', async (repo: string, number: number, path: string) => {
+    await prepared(repo, number)
+    return walkthroughs.cached(repo, number, path)
+  })
+  handle('review:walkthrough', async (repo: string, number: number, path: string, regenerate?: boolean) => {
+    const { gh, me } = requireGh()
+    const { baseSha: _baseSha, ...pull } = await getPull(gh, repo, number, me)
+    const tree = await prepared(repo, number)
+    return walkthroughs.generate(pull, tree.files, path, regenerate)
+  })
+
+  handle('review:prepareAll', async (repo: string, number: number, paths: string[]) => {
+    const { gh, me } = requireGh()
+    const { baseSha: _baseSha, ...pull } = await getPull(gh, repo, number, me)
+    const tree = await prepared(repo, number)
+    return walkthroughs.prepareAll(pull, tree.files, paths)
   })
 
   handle('chat:send', async (repo: string, number: number, messages: ChatMessage[]) => {
@@ -313,6 +359,8 @@ app.whenReady().then(async () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
+
+app.on('before-quit', () => flushUiState())
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

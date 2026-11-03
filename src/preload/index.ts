@@ -35,13 +35,16 @@ const api: PrwayApi = {
     submitReview: call('pulls:submitReview'),
     threads: call('pulls:threads'),
     reply: call('pulls:reply'),
-    setResolved: call('pulls:setResolved')
+    setResolved: call('pulls:setResolved'),
+    conversation: call('pulls:conversation'),
+    comment: call('pulls:comment')
   },
   worktree: {
     prepare: call('worktree:prepare'),
     fileDiff: call('worktree:fileDiff'),
     reveal: call('worktree:reveal'),
-    remove: call('worktree:remove')
+    remove: call('worktree:remove'),
+    cleanup: call('worktree:cleanup')
   },
   code: {
     definitions: call('code:definitions'),
@@ -51,6 +54,12 @@ const api: PrwayApi = {
   context: {
     changedFunctions: call('context:changedFunctions'),
     forFunction: call('context:forFunction')
+  },
+  review: {
+    hunks: call('review:hunks'),
+    cachedWalkthrough: call('review:cachedWalkthrough'),
+    walkthrough: call('review:walkthrough'),
+    prepareAll: call('review:prepareAll')
   },
   chat: {
     send: call('chat:send')
@@ -73,6 +82,10 @@ const api: PrwayApi = {
   guide: {
     get: call('guide:get'),
     generate: call('guide:generate')
+  },
+  state: {
+    loadAll: () => ipcRenderer.sendSync('state:loadAll') as Record<string, unknown>,
+    set: (key, value) => ipcRenderer.send('state:set', key, value)
   },
   openExternal: call('openExternal'),
   onNotifications: (cb) => subscribe<PrNotification[]>('notifications', cb),

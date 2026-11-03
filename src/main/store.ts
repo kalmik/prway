@@ -1,5 +1,5 @@
 import { app, safeStorage } from 'electron'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -49,6 +49,44 @@ export function loadSecret(name: string): string | null {
 
 export function clearSecret(name: string): void {
   rmSync(secretFile(name), { force: true })
+}
+
+// ---- UI state (open tabs, drafts, chat, viewed files...) ----
+// Written to disk on every change (debounced a little), so a crash or force-quit loses at most the last moment.
+// Kept apart from settings.json: it changes often and is not configuration.
+
+const uiStateFile = () => join(app.getPath('userData'), 'ui-state.json')
+let uiState: Record<string, unknown> | null = null
+let uiStateTimer: NodeJS.Timeout | null = null
+
+export function loadUiState(): Record<string, unknown> {
+  if (!uiState) {
+    try {
+      uiState = JSON.parse(readFileSync(uiStateFile(), 'utf8')) as Record<string, unknown>
+    } catch {
+      uiState = {}
+    }
+  }
+  return uiState
+}
+
+export function setUiState(key: string, value: unknown): void {
+  const state = loadUiState()
+  if (value === undefined || value === null) delete state[key]
+  else state[key] = value
+  if (uiStateTimer) clearTimeout(uiStateTimer)
+  uiStateTimer = setTimeout(flushUiState, 150)
+}
+
+/** Writes the UI state now (atomically: a temp file, then rename). Called on quit too. */
+export function flushUiState(): void {
+  if (uiStateTimer) clearTimeout(uiStateTimer)
+  uiStateTimer = null
+  if (!uiState) return
+  mkdirSync(app.getPath('userData'), { recursive: true })
+  const tmp = `${uiStateFile()}.tmp`
+  writeFileSync(tmp, JSON.stringify(uiState))
+  renameSync(tmp, uiStateFile())
 }
 
 export const saveToken = (token: string) => saveSecret('github-token', token)

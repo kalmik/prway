@@ -2,16 +2,33 @@ import { useEffect, useState } from 'react'
 import type { AuthState, PrNotification } from '../../shared/types'
 import { Login } from './components/Login'
 import { PrList } from './components/PrList'
-import { PrView } from './components/PrView'
+import { PrTabs, type PrTab } from './components/PrTabs'
+import { PrView, type PrStatus } from './components/PrView'
 import { TopBar } from './components/TopBar'
 import { storage } from './util'
 
 const api = window.prway
 
+/** Open PRs stay mounted (hidden) so switching tabs keeps scroll, drafts and panels. */
+const MAX_TABS = 10
+const tabKey = (t: { repo: string; number: number }) => `${t.repo}#${t.number}`
+
 export function App() {
   const [auth, setAuth] = useState<AuthState | null>(null)
   const [repo, setRepo] = useState<string | null>(null)
-  const [prNumber, setPrNumber] = useState<number | null>(null)
+  const [tabs, setTabsState] = useState<PrTab[]>(() => storage.get<PrTab[]>('ui.tabs', []))
+  const [activeKey, setActiveKeyState] = useState<string | null>(() => storage.get<string | null>('ui.activeTab', null))
+  const setTabs = (update: (t: PrTab[]) => PrTab[]) =>
+    setTabsState((prev) => {
+      const next = update(prev)
+      storage.set('ui.tabs', next)
+      return next
+    })
+  const setActiveKey = (key: string | null) => {
+    setActiveKeyState(key)
+    storage.set('ui.activeTab', key)
+  }
+  const active = tabs.find((t) => tabKey(t) === activeKey) ?? null
   const [notifications, setNotifications] = useState<PrNotification[]>([])
   const [sidebarOpen, setSidebarOpenState] = useState(() => storage.get('ui.sidebarOpen', true))
   const setSidebarOpen = (open: boolean) => {
@@ -34,14 +51,37 @@ export function App() {
 
   function selectRepo(fullName: string) {
     setRepo(fullName)
-    setPrNumber(null)
     void api.repos.setSelected(fullName)
   }
 
-  function openPr(fullName: string, number: number) {
-    setRepo(fullName)
-    void api.repos.setSelected(fullName)
-    setPrNumber(number)
+  /** Opens a PR in a tab, or switches to its tab when it is already open. */
+  function openPr(fullName: string, number: number, title?: string) {
+    const key = tabKey({ repo: fullName, number })
+    setTabs((ts) => {
+      if (ts.some((t) => tabKey(t) === key)) return ts
+      const next = [...ts, { repo: fullName, number, title: title ?? `#${number}` }]
+      // Too many tabs: drop the oldest ones that are not the one being opened.
+      return next.length > MAX_TABS ? next.slice(next.length - MAX_TABS) : next
+    })
+    setActiveKey(key)
+  }
+
+  function closeTab(key: string) {
+    const index = tabs.findIndex((t) => tabKey(t) === key)
+    const rest = tabs.filter((t) => tabKey(t) !== key)
+    setTabs(() => rest)
+    if (key === activeKey) {
+      const next = rest[Math.min(index, rest.length - 1)]
+      setActiveKey(next ? tabKey(next) : null)
+    }
+  }
+
+  function updateTab(key: string, status: PrStatus) {
+    setTabs((ts) => {
+      const t = ts.find((x) => tabKey(x) === key)
+      if (!t || (t.title === status.title && t.drafts === status.drafts)) return ts
+      return ts.map((x) => (tabKey(x) === key ? { ...x, ...status } : x))
+    })
   }
 
   if (!auth) return <div className="center muted">Loading…</div>
@@ -70,7 +110,13 @@ export function App() {
         {sidebarOpen ? (
           <aside className="sidebar">
             {repo ? (
-              <PrList repo={repo} selected={prNumber} onSelect={setPrNumber} onCollapse={() => setSidebarOpen(false)} />
+              <PrList
+                repo={repo}
+                selected={active?.repo === repo ? active.number : null}
+                open={new Set(tabs.filter((t) => t.repo === repo).map((t) => t.number))}
+                onSelect={(p) => openPr(p.repo, p.number, p.title)}
+                onCollapse={() => setSidebarOpen(false)}
+              />
             ) : (
               <p className="muted pad">Pick a repository at the top to see its open pull requests.</p>
             )}
@@ -84,11 +130,15 @@ export function App() {
           </aside>
         )}
         <main className="main">
-          {repo && prNumber ? (
-            <PrView key={`${repo}#${prNumber}`} repo={repo} number={prNumber} />
-          ) : (
-            <div className="center muted">Select a pull request to start reviewing.</div>
+          {tabs.length > 0 && (
+            <PrTabs tabs={tabs} activeKey={activeKey} currentRepo={repo} onSelect={setActiveKey} onClose={closeTab} />
           )}
+          {tabs.map((t) => (
+            <div key={tabKey(t)} className="tab-page" hidden={tabKey(t) !== activeKey}>
+              <PrView repo={t.repo} number={t.number} onStatus={(s) => updateTab(tabKey(t), s)} />
+            </div>
+          ))}
+          {!active && <div className="center muted">Select a pull request to start reviewing.</div>}
         </main>
       </div>
     </div>

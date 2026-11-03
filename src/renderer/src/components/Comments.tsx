@@ -6,7 +6,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { DraftComment, ReviewThread } from '../../../shared/types'
 import type { monaco } from '../monaco'
 import { errorText, timeAgo } from '../util'
-import { Markdown } from './Markdown'
+import { Markdown, plainPreview } from './Markdown'
 
 type CodeEditor = monaco.editor.IStandaloneCodeEditor
 
@@ -140,6 +140,20 @@ function Box({
   autoFocus?: boolean
 }) {
   const [text, setText] = useState(initial)
+  // Monaco attaches view zones to the page after React renders them, so `autoFocus` fires too early.
+  // Focus once attached, without letting the browser scroll the editor.
+  const area = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    if (!autoFocus) return
+    let tries = 0
+    const t = setInterval(() => {
+      if (area.current?.isConnected || ++tries > 20) {
+        clearInterval(t)
+        area.current?.focus({ preventScroll: true })
+      }
+    }, 30)
+    return () => clearInterval(t)
+  }, [autoFocus])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   async function submit() {
@@ -158,7 +172,7 @@ function Box({
   return (
     <div className="comment-box">
       <textarea
-        autoFocus={autoFocus}
+        ref={area}
         rows={3}
         placeholder={placeholder}
         value={text}
@@ -190,7 +204,7 @@ function Thread({ thread, actions }: { thread: ReviewThread; actions: CommentAct
           {open ? '▾' : '▸'} {thread.comments.length} comment{thread.comments.length > 1 ? 's' : ''}
         </button>
         {thread.resolved && <span className="tag">resolved</span>}
-        {!open && first && <span className="muted ellipsis">{first.author}: {first.body}</span>}
+        {!open && first && <span className="muted ellipsis">{first.author}: {plainPreview(first.body)}</span>}
         <span className="spacer" />
         <button className="link" onClick={() => actions.onResolve(thread, !thread.resolved)}>
           {thread.resolved ? 'Unresolve' : 'Resolve'}

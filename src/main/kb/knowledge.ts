@@ -42,6 +42,44 @@ export function domainFor(path: string, rules: RepoRules = EMPTY_RULES): string 
   return (name || 'root').replace(/[^\w.-]+/g, '_').toLowerCase()
 }
 
+/** GitHub text without HTML, HTML comments and markdown noise, on one line. */
+export function cleanText(text: string, max = 500): string {
+  const t = text
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/<[^>]*$/, ' ') // a tag cut off by an earlier truncation
+    .replace(/^\s*[-*] \[[ x]\].*$/gim, ' ') // checklists
+    .replace(/[#*_`>]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return t.length > max ? t.slice(0, max) + '…' : t
+}
+
+/** The first paragraph of a PR description that says something (not a heading, template or checklist). */
+export function descriptionIntent(body: string | null, title: string): string {
+  const paragraphs = (body ?? '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter((p) => p && !/^#{1,6}\s/.test(p) && !/^\s*[-*] \[[ x]\]/m.test(p) && cleanText(p).length > 30)
+  return paragraphs[0] ? cleanText(paragraphs[0], 500) : title
+}
+
+const isBot = (login: string) => /\[bot\]$|-bot$|^dependabot|^renovate/i.test(login)
+
+/** Applies today's cleaning to entries saved by older versions. */
+function normalizeEntry(e: KbEntry): KbEntry {
+  const intent = /^#{1,6}\s/.test(e.intent.trim()) || cleanText(e.intent).length < 10 ? e.title : cleanText(e.intent, 600)
+  return {
+    ...e,
+    intent,
+    decisions: e.decisions
+      .map((d) => ({ ...d, body: cleanText(d.body, 400) }))
+      .filter((d) => !(isBot(d.reviewer) && (d.state === 'COMMENTED' || !d.body))),
+    discussions: e.discussions.map((d) => ({ ...d, body: cleanText(d.body, 300) })).filter((d) => d.body)
+  }
+}
+
 function readJson<T>(path: string): T | null {
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as T
@@ -51,7 +89,7 @@ function readJson<T>(path: string): T | null {
 }
 
 /** pr-<n> folder names under a directory. */
-function prNumbersIn(dir: string): number[] {
+export function prNumbersIn(dir: string): number[] {
   if (!existsSync(dir)) return []
   return readdirSync(dir)
     .map((d) => /^pr-(\d+)$/.exec(d)?.[1])
@@ -61,6 +99,7 @@ function prNumbersIn(dir: string): number[] {
 
 export class KnowledgeBase {
   private lastSync = new Map<string, { at: number; added: number }>()
+  private rebuiltOnce = new Set<string>()
   private syncing = new Map<string, Promise<KbStatus>>()
   /** PRs already checked and found not merged, with when, so they are not re-checked too often. */
   private openChecked = new Map<string, number>()
@@ -77,6 +116,7 @@ export class KnowledgeBase {
       .filter((f) => f.endsWith('.json'))
       .map((f) => readJson<KbEntry>(join(dir, f)))
       .filter((e): e is KbEntry => !!e)
+      .map(normalizeEntry)
   }
 
   status(repo: string): KbStatus {
@@ -128,6 +168,11 @@ export class KnowledgeBase {
       }
     }
     if (added.length) this.write(repo, added)
+    else if (!this.rebuiltOnce.has(repo)) {
+      // Once per run: apply the current format to notes written by older versions.
+      this.rebuiltOnce.add(repo)
+      this.rebuild(repo)
+    }
     this.lastSync.set(repo, { at: Date.now(), added: added.length })
     return this.status(repo)
   }
@@ -153,7 +198,6 @@ export class KnowledgeBase {
     const reviewable = files.filter((f) => !generatedReason(f.path))
     const symbols = await this.symbolsFromPatches(repo, info.headSha, reviewable)
     const rules = this.rulesFor(repo, number)
-    const firstParagraph = (info.body ?? '').split(/\n\s*\n/)[0]?.trim().slice(0, 500)
 
     return {
       repo,
@@ -162,7 +206,7 @@ export class KnowledgeBase {
       url: info.url,
       author: info.author,
       mergedAt: info.mergedAt ?? new Date().toISOString(),
-      intent: guide?.intent ?? (firstParagraph || info.title),
+      intent: guide?.intent ?? descriptionIntent(info.body, info.title),
       rules: guide?.businessRules ?? [],
       decisions: reviews
         .filter((r) => r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED' || r.body.trim())
@@ -209,13 +253,18 @@ export class KnowledgeBase {
     return [...out]
   }
 
+  /** Rebuilds the markdown files from the entries (e.g. after a format change). */
+  rebuild(repo: string): void {
+    if (this.entries(repo).length) this.write(repo, [])
+  }
+
   private write(repo: string, added: KbEntry[]): void {
     const root = kbDir(repo)
     mkdirSync(join(root, 'entries'), { recursive: true })
     for (const e of added) writeFileSync(join(root, 'entries', `pr-${e.number}.json`), JSON.stringify(e, null, 2) + '\n')
 
     const all = this.entries(repo).sort((a, b) => b.mergedAt.localeCompare(a.mergedAt))
-    const touched = new Set(added.flatMap((e) => e.domains))
+    const touched = new Set(all.flatMap((e) => e.domains))
     for (const domain of touched) {
       const md = renderDomain(repo, domain, all.filter((e) => e.domains.includes(domain)))
       writeFileSync(join(root, `${domain}.md`), md)
@@ -226,7 +275,11 @@ export class KnowledgeBase {
   private async commit(root: string, added: KbEntry[]): Promise<void> {
     if (!existsSync(join(root, '.git'))) await git(['init', '-q'], root)
     await git(['add', '-A'], root)
-    const msg = added.length === 1 ? `Add #${added[0].number}: ${added[0].title}` : `Add ${added.length} merged PRs`
+    const msg = !added.length
+      ? 'Rebuild notes'
+      : added.length === 1
+        ? `Add #${added[0].number}: ${added[0].title}`
+        : `Add ${added.length} merged PRs`
     await git(['-c', 'user.name=PRway', '-c', 'user.email=prway@localhost', 'commit', '-q', '-m', msg], root)
   }
 
@@ -279,8 +332,10 @@ export function renderEntry(e: KbEntry): string {
       out.push(`- On \`${t.path}${t.line ? `:${t.line}` : ''}\` (${t.resolved ? 'resolved' : 'open'}), ${t.author}: "${quote(t.body)}"`)
     }
   }
-  out.push('', `**Files:** ${e.files.map((f) => `\`${f}\``).join(', ') || '—'}`)
-  if (e.symbols.length) out.push(`**Functions:** ${e.symbols.map((s) => `\`${s.split('#')[1]}\``).join(', ')}`)
+  const shown = e.files.slice(0, 15).map((f) => `\`${f}\``)
+  if (e.files.length > 15) shown.push(`and ${e.files.length - 15} more`)
+  out.push('', `**Files:** ${shown.join(', ') || '—'}`)
+  if (e.symbols.length) out.push(`**Functions:** ${[...new Set(e.symbols.map((s) => s.split('#')[1]))].map((n) => `\`${n}\``).join(', ')}`)
   return out.join('\n')
 }
 
@@ -305,7 +360,7 @@ export function kbPromptText(matches: KbMatch[]): string {
         .slice(0, 3)
         .map((d) => `  review note on ${d.path}: ${quote(d.body).slice(0, 200)}`)
       return [
-        `- #${e.number} ${e.title} (merged ${e.mergedAt.slice(0, 10)}), touched ${symbols.length ? symbols.map((s) => s.split('#')[1]).join(', ') : files.join(', ')}`,
+        `- #${e.number} ${e.title} (merged ${e.mergedAt.slice(0, 10)}), touched ${symbols.length ? [...new Set(symbols.map((s) => s.split('#')[1]))].join(', ') : files.join(', ')}`,
         `  intent: ${quote(e.intent).slice(0, 300)}`,
         ...rules,
         ...decisions

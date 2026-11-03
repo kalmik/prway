@@ -81,7 +81,7 @@ export function KnowledgePanel({
             </div>
             <div className="small muted">
               Same {symbols.length ? 'functions' : 'files'}:{' '}
-              {(symbols.length ? symbols.map((s) => s.split('#')[1]) : files.map((f) => f.split('/').pop())).join(', ')}
+              {[...new Set(symbols.length ? symbols.map((s) => s.split('#')[1]) : files.map((f) => f.split('/').pop()))].join(', ')}
             </div>
             <p className="small">{e.intent}</p>
             {e.rules.length > 0 && (

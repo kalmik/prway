@@ -31,6 +31,8 @@ export function ReviewBox({
       setBody('')
       setMessage({ ok: true, text: `Review submitted to GitHub${drafts.length ? ` with ${drafts.length} inline comment${drafts.length > 1 ? 's' : ''}` : ''}.` })
       onSubmitted()
+      // The PR list shows your review state: let it reload.
+      window.dispatchEvent(new CustomEvent('prway-reviewed', { detail: { repo, number } }))
     } catch (err) {
       setMessage({ ok: false, text: errorText(err) })
     } finally {

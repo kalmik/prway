@@ -75,7 +75,7 @@ export function FileViewer({
         value={text}
         language={languageFor(path)}
         path={`head/${headSha}/${path}`}
-        theme={dark ? 'vs-dark' : 'vs'}
+        theme={dark ? 'prway-dark' : 'prway-light'}
         onMount={(ed) => setEditor(ed)}
         options={{
           readOnly: true,

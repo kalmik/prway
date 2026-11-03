@@ -13,21 +13,39 @@ export function timeAgo(iso: string): string {
   return `${out} ago`
 }
 
-/** localStorage can throw (private mode, blocked storage); never let that break the app. */
+/**
+ * UI state that survives restarts: open tabs, drafts, chat, viewed files, layout.
+ * Saved by the main process in ui-state.json (written on every change), read once at startup.
+ */
+const state: Record<string, unknown> = (() => {
+  try {
+    const saved = window.prway.state.loadAll()
+    if (Object.keys(saved).length) return { ...saved }
+    // First run with ui-state.json: bring over what earlier versions kept in localStorage.
+    const migrated: Record<string, unknown> = {}
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)!
+      try {
+        migrated[k] = JSON.parse(localStorage.getItem(k)!)
+        window.prway.state.set(k, migrated[k])
+      } catch {
+        /* not ours */
+      }
+    }
+    return migrated
+  } catch {
+    return {}
+  }
+})()
+
 export const storage = {
   get<T>(key: string, fallback: T): T {
-    try {
-      const v = localStorage.getItem(key)
-      return v ? (JSON.parse(v) as T) : fallback
-    } catch {
-      return fallback
-    }
+    return key in state ? (state[key] as T) : fallback
   },
   set(key: string, value: unknown): void {
-    try {
-      localStorage.setItem(key, JSON.stringify(value))
-    } catch {
-      /* ignore */
-    }
+    const empty = value === null || value === undefined || (Array.isArray(value) && value.length === 0)
+    if (empty) delete state[key]
+    else state[key] = value
+    window.prway.state.set(key, empty ? null : value)
   }
 }

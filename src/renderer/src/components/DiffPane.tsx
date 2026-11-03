@@ -3,11 +3,12 @@
 
 import { DiffEditor } from '@monaco-editor/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangedFile, DiffSide, DraftComment, FileDiff, GuideFile, ReviewThread, WorktreeInfo } from '../../../shared/types'
+import type { ChangedFile, DiffSide, DraftComment, FileDiff, GuideFile, Hunk, HunkAuto, ReviewThread, WorktreeInfo } from '../../../shared/types'
 import { languageFor, monaco, MONO_FONT } from '../monaco'
 import { attachCodeNav, type NavHandlers } from './codeNav'
 import { LineComments, useViewZones, type CommentActions, type ZoneSpec } from './Comments'
 import { Markdown } from './Markdown'
+import { AUTO_LABEL, hunkAnchor, hunkRange } from './ReviewPanel'
 
 type CodeEditor = monaco.editor.IStandaloneCodeEditor
 
@@ -25,6 +26,52 @@ interface Composing {
   startLine?: number
 }
 
+export interface HunkMark {
+  hunk: Hunk
+  approved: boolean
+  current: boolean
+  position: number
+  total: number
+  auto?: HunkAuto
+  /** The walkthrough's one-line summary of the chunk, if any. */
+  summary?: string
+}
+
+/** Lines a chunk covers on the side it is shown on (removed-only chunks live on the left). */
+function hunkSpan(h: Hunk): { side: DiffSide; start: number; end: number } {
+  return h.newLines > 0
+    ? { side: 'RIGHT', start: h.newStart, end: h.newStart + h.newLines - 1 }
+    : { side: 'LEFT', start: h.oldStart, end: h.oldStart + Math.max(1, h.oldLines) - 1 }
+}
+
+/** The bar shown just above the current chunk, in the code. */
+function ChunkBanner({ mark, onApproveNext, onComment }: { mark: HunkMark; onApproveNext: () => void; onComment: () => void }) {
+  const h = mark.hunk
+  return (
+    <div className={`chunk-banner ${mark.approved ? 'approved' : ''}`}>
+      <span className="chunk-banner-title">
+        ▶ Chunk {mark.position} of {mark.total}
+      </span>
+      <span className="muted">{hunkRange(h)}</span>
+      {h.header && <code>{h.header}</code>}
+      {mark.summary && <span className="chunk-banner-summary">{mark.summary}</span>}
+      <span className="spacer" />
+      {mark.auto ? (
+        <span className="auto-tag">pre-approved · {mark.auto.kind === 'ai' ? mark.auto.reason : AUTO_LABEL[mark.auto.kind]}</span>
+      ) : mark.approved ? (
+        <span className="ok">✓ approved</span>
+      ) : (
+        <button className="primary small" onClick={onApproveNext} title="Approve and go to the next chunk (a)">
+          Approve & next
+        </button>
+      )}
+      <button className="small" onClick={onComment} title="Comment on this chunk (c)">
+        Comment
+      </button>
+    </div>
+  )
+}
+
 interface Props {
   file: ChangedFile
   diff: FileDiff
@@ -37,6 +84,11 @@ interface Props {
   dark: boolean
   reveal: RevealRequest | null
   nav: NavHandlers
+  /** Review-flow chunks of this file: the current one is outlined, approved ones get a green bar. */
+  hunkMarks?: HunkMark[]
+  /** Clicking inside a chunk in the code makes it the current one. */
+  onSelectHunk?: (h: Hunk) => void
+  onApproveNext?: (h: Hunk) => void
   actions: Omit<CommentActions, 'onAddDraft' | 'onCancelCompose'> & {
     onCreateDraft: (d: Omit<DraftComment, 'id' | 'headSha'>) => void
   }
@@ -57,6 +109,8 @@ export function DiffPane(props: Props) {
   // Handlers change on every render; editors keep a stable callback that reads the latest ones.
   const latest = useRef(props)
   latest.current = props
+  const sideBySideRef = useRef(sideBySide)
+  sideBySideRef.current = sideBySide
 
   const commentable = useMemo(
     () => ({ LEFT: new Set(diff.commentable.left), RIGHT: new Set(diff.commentable.right) }),
@@ -76,6 +130,17 @@ export function DiffPane(props: Props) {
       const hover = ed.createDecorationsCollection()
       disposables.push(
         ed.onMouseDown((e) => {
+          const T = monaco.editor.MouseTargetType
+          if ((e.target.type === T.CONTENT_TEXT || e.target.type === T.CONTENT_EMPTY) && e.target.position) {
+            if (e.event.metaKey || e.event.ctrlKey) return // go to definition
+            const line = e.target.position.lineNumber
+            const mark = latest.current.hunkMarks?.find((m) => {
+              const span = hunkSpan(m.hunk)
+              return (span.side === side || !sideBySideRef.current) && line >= span.start && line <= span.end
+            })
+            if (mark && !mark.current) latest.current.onSelectHunk?.(mark.hunk)
+            return
+          }
           if (!GUTTER.has(e.target.type) || !e.target.position) return
           const line = e.target.position.lineNumber
           if (!commentable[side].has(line)) return
@@ -98,6 +163,24 @@ export function DiffPane(props: Props) {
     }
     return () => disposables.forEach((d) => d.dispose())
   }, [modified, original, commentable])
+
+  // ---- Keep Monaco's inner container from being scrolled by the browser ----
+  // Typing in a comment box inside the diff makes the browser scroll its container to show the caret; Monaco
+  // doesn't expect that and the code jumps. Undo any such scroll right away (Monaco scrolls its own way).
+  useEffect(() => {
+    const guards = [modified, original]
+      .map((ed) => ed?.getDomNode()?.querySelector<HTMLElement>('.overflow-guard'))
+      .filter((g): g is HTMLElement => !!g)
+    const reset = (e: Event) => {
+      const g = e.currentTarget as HTMLElement
+      if (g.scrollTop || g.scrollLeft) {
+        g.scrollTop = 0
+        g.scrollLeft = 0
+      }
+    }
+    guards.forEach((g) => g.addEventListener('scroll', reset))
+    return () => guards.forEach((g) => g.removeEventListener('scroll', reset))
+  }, [modified, original])
 
   // ---- Code navigation on both sides ----
   useEffect(() => {
@@ -139,6 +222,45 @@ export function DiffPane(props: Props) {
       orig.clear()
     }
   }, [modified, original, diff, guideFile, threads, drafts])
+
+  // ---- Review chunks: current and approved ----
+  const { hunkMarks } = props
+  useEffect(() => {
+    if (!modified || !original || !hunkMarks?.length) return
+    const right: monaco.editor.IModelDeltaDecoration[] = []
+    const left: monaco.editor.IModelDeltaDecoration[] = []
+    for (const { hunk: h, approved, current } of hunkMarks) {
+      const { side, start, end } = hunkSpan(h)
+      const list = side === 'RIGHT' ? right : left
+      if (current) {
+        // No background fill (it would stack on the green/red diff colours): a frame above and below instead.
+        list.push(
+          { range: new monaco.Range(start, 1, start, 1), options: { isWholeLine: true, className: 'hunk-current-top' } },
+          { range: new monaco.Range(end, 1, end, 1), options: { isWholeLine: true, className: 'hunk-current-bottom' } }
+        )
+      }
+      list.push({
+        range: new monaco.Range(start, 1, end, 1),
+        options: current
+          ? {
+              isWholeLine: true,
+              linesDecorationsClassName: 'hunk-current-gutter',
+              overviewRuler: { color: '#4493f8', position: monaco.editor.OverviewRulerLane.Full }
+            }
+          : {
+              isWholeLine: true,
+              // Every chunk shows its extent in the gutter: green once approved, grey while it waits.
+              linesDecorationsClassName: approved ? 'hunk-approved-gutter' : 'hunk-gutter'
+            }
+      })
+    }
+    const r = modified.createDecorationsCollection(right)
+    const l = original.createDecorationsCollection(left)
+    return () => {
+      r.clear()
+      l.clear()
+    }
+  }, [modified, original, hunkMarks])
 
   // ---- Scroll to a requested line ----
   // The diff is computed asynchronously, and folding unchanged regions moves lines around:
@@ -213,8 +335,30 @@ export function DiffPane(props: Props) {
       }
     })
   }
+  const currentMark = hunkMarks?.find((m) => m.current)
+  const bannerZone = (): ZoneSpec[] => {
+    if (!currentMark) return []
+    const h = currentMark.hunk
+    return [
+      {
+        key: `chunk:${h.hash}:${currentMark.approved}:${currentMark.summary ?? ''}`,
+        // Above the chunk, on the new side (inline view shows removed lines there too).
+        line: Math.max(0, h.newStart - 1),
+        node: (
+          <ChunkBanner
+            mark={currentMark}
+            onApproveNext={() => latest.current.onApproveNext?.(h)}
+            onComment={() => {
+              const a = hunkAnchor(h)
+              setComposing({ side: a.side === 'LEFT' && sideBySideRef.current ? 'LEFT' : 'RIGHT', line: a.side === 'LEFT' ? h.newStart : a.line })
+            }}
+          />
+        )
+      }
+    ]
+  }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const rightZones = useMemo(() => zonesFor('RIGHT'), [threads, drafts, composing, tree.headSha, file.path, dark])
+  const rightZones = useMemo(() => [...bannerZone(), ...zonesFor('RIGHT')], [threads, drafts, composing, tree.headSha, file.path, dark, currentMark])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const leftZones = useMemo(() => (sideBySide ? zonesFor('LEFT') : []), [threads, drafts, composing, tree.headSha, file.path, sideBySide, dark])
   useViewZones(modified, rightZones)
@@ -271,7 +415,7 @@ export function DiffPane(props: Props) {
           language={language}
           originalModelPath={`base/${tree.mergeBase}/${file.oldPath ?? file.path}`}
           modifiedModelPath={`head/${tree.headSha}/${file.path}`}
-          theme={dark ? 'vs-dark' : 'vs'}
+          theme={dark ? 'prway-dark' : 'prway-light'}
           onMount={(ed) => {
             diffEditorRef.current = ed
             setModified(ed.getModifiedEditor())
@@ -281,7 +425,9 @@ export function DiffPane(props: Props) {
             readOnly: true,
             originalEditable: false,
             renderSideBySide: sideBySide,
-            useInlineViewWhenSpaceIsLimited: false,
+            // Too narrow for two sides (e.g. with the outline and review card open): show inline, like GitHub.
+            useInlineViewWhenSpaceIsLimited: true,
+            renderSideBySideInlineBreakpoint: 760,
             ignoreTrimWhitespace: hideWhitespace,
             automaticLayout: true,
             minimap: { enabled: false },

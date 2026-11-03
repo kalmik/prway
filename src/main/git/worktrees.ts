@@ -317,6 +317,23 @@ export class WorktreeManager {
       this.refs.delete(`${repo}#${number}`)
     })
   }
+
+  /** True when the worktree has changes you made (modified, staged or untracked files that aren't ignored). */
+  async isDirty(repo: string, number: number): Promise<boolean> {
+    const wt = this.worktreeDir(repo, number)
+    if (!existsSync(wt)) return false
+    return (await git(['status', '--porcelain', '--untracked-files=normal'], wt)).trim().length > 0
+  }
+
+  /** Removes a closed PR's worktree and its ref, so git can reclaim the space later. */
+  async removeClosed(repo: string, number: number): Promise<void> {
+    await this.remove(repo, number)
+    await this.withLock(repo, async () => {
+      const dir = this.repoDir(repo)
+      await git(['update-ref', '-d', `refs/prway/pr/${number}`], dir).catch(() => undefined)
+      await git(['worktree', 'prune'], dir).catch(() => undefined)
+    })
+  }
 }
 
 /** Parses `git diff --name-status -z` output. Renames and copies carry two paths and a similarity score (R100 = identical). */

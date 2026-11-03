@@ -90,13 +90,16 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 - AI settings: provider (Claude Code CLI = subscription, or Anthropic API key), model, effort.
 
 **Milestone 3 — review in depth**
-- Layout: collapsible PR list; the diff takes the middle, with a resizable bottom panel (Guide · Context ·
-  Knowledge · Chat) and an "Ask about this PR" prompt under it.
+- Layout: collapsible PR list; open PRs as tabs (kept loaded, so each keeps its scroll, drafts and panel; up to 10);
+  the diff takes the middle, with a resizable panel (Guide · Context · Knowledge · Chat) below it or on the right,
+  and an "Ask about this PR" prompt under it.
 - Inline review comments:
   - GitHub threads show under their lines (GraphQL, with resolved/outdated state); reply, resolve, unresolve.
   - Click a line number to write a comment (select lines first for a range). Comments stay as pending drafts
     (saved locally per PR) and go out together with the review, anchored to the head commit PRway shows.
   - Only lines inside diff hunks take comments, as on GitHub. Outdated threads are listed above the diff.
+  - Conversation tab: the description, general PR comments and review summaries (with their state) in date order;
+    post a general comment; Refresh reloads it and the inline threads.
 - Code navigation at the PR head: ⌘/Ctrl+click or F12 for definitions, Shift+F12 for references, also in files the
   PR did not change (opened read-only), with a Back button. Built on `git grep` plus per-language definition
   patterns (Elixir, TS/JS, Python, Go, Ruby, Rust, JVM languages, SQL).
@@ -112,6 +115,34 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 - Knowledge base: when a PR you opened in PRway is merged, its intent, business rules, review decisions and changed
   functions are saved; entries about the same files or functions show in the Knowledge tab and go into the guide prompt.
 - Chat about the PR (same provider and prompt material as the guide).
+
+**Milestone 4 — guided review (the main view)**
+- A PR opens in the guided review; the classic file list + diff is one click away ("Files").
+- Left: an outline — Overview, the files in the guide's reading order with their chunks (diff hunks), skipped noise
+  files, Finish & submit — with chunk and file progress.
+- Overview step: the review plan (files, chunks, noise, open threads) and the AI guide, then "Start review".
+- File step: the file's walkthrough beside the diff — summary, things to check, related code (opens any file at the line,
+  in the diff or read-only) — and the current chunk with its summary, notes and risk. Approve chunks locally
+  ("Approve & next"), comment on a chunk (becomes a pending inline comment). Keys: j/k chunks, a approve & next,
+  c comment, n/p files.
+- Walkthroughs are made per file on demand (and the next file in the background), with a capped effort for speed, and
+  saved per head commit in `~/.prway/guides/.../files/<sha>/`. References to files that don't exist are dropped.
+- Approvals are keyed by the hunk's changed lines, so they survive new commits that don't touch that hunk; a file
+  with every chunk approved counts as viewed.
+- Finish step: what's not approved yet, your pending comments, open threads, the guide's questions, and the submit form.
+- Pre-approval, so the reviewer only spends time where behaviour changes:
+  - rules (no AI, instant): chunks whose changed lines are only imports/aliases, comments, blank lines, formatting
+    (same tokens) or moved code (`src/main/review/triage.ts`, conservative: every changed line must qualify)
+  - AI: a walkthrough marks a chunk trivial only when it is also low risk (log wording, local renames, docs)
+  - "Start review" explains every file in the background (2 at a time, up to 15 files) so verdicts exist up front
+  - pre-approved chunks count as approved, are skipped by j/k and "Approve & next", show one line with the reason,
+    and are listed on the Finish step for spot checks; unticking one sends it back to you. Both layers can be turned off.
+- Walkthroughs talk only about behaviour changes and real risks; a chunk that changes nothing gets no text.
+- Cleanup of worktrees whose PR is closed or merged: checked with GitHub, merged PRs saved to the knowledge base
+  first, worktrees with local changes and PRs open in a tab are kept. Runs at most every 30 minutes when the PR list
+  loads, and from the 🧹 button. PRs you approved (no new commits since) collapse into "Approved by you".
+- Restores what was open: tabs, the file per PR, drafts, chat and layout live in `ui-state.json` (written on every
+  change, so a crash keeps them). A guide made for an older commit is still shown, marked outdated.
 
 ### 4.2 Next (in order)
 

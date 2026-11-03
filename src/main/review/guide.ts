@@ -2,7 +2,7 @@
 // It does not replace the review; it points attention at business rules, risky code and
 // changes the stated intent doesn't explain.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { ChangedFile, PullDetail, ReviewGuide } from '../../shared/types'
 import { getAiSettings, getProvider } from '../ai/provider'
@@ -17,14 +17,30 @@ function guidePath(repo: string, number: number, headSha: string): string {
   return join(dataDir, 'guides', repo, `pr-${number}`, `${headSha}.json`)
 }
 
-export function loadGuide(repo: string, number: number, headSha: string): ReviewGuide | null {
-  const p = guidePath(repo, number, headSha)
-  if (!existsSync(p)) return null
+function readGuide(p: string): ReviewGuide | null {
   try {
     return JSON.parse(readFileSync(p, 'utf8')) as ReviewGuide
   } catch {
     return null
   }
+}
+
+/**
+ * The guide for this head commit; else the newest guide saved for the PR (the UI marks it outdated),
+ * so new commits don't throw away a guide that is still mostly right.
+ */
+export function loadGuide(repo: string, number: number, headSha: string): ReviewGuide | null {
+  const exact = guidePath(repo, number, headSha)
+  if (existsSync(exact)) return readGuide(exact)
+  const dir = dirname(exact)
+  if (!existsSync(dir)) return null
+  return (
+    readdirSync(dir)
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => readGuide(join(dir, f)))
+      .filter((g): g is ReviewGuide => !!g)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null
+  )
 }
 
 /** Issue numbers mentioned in the PR description ("fixes #12", "#34"), same repo only. */

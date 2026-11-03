@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ReviewGuide } from '../../../shared/types'
 import { timeAgo } from '../util'
+import { Markdown } from './Markdown'
 
 interface Props {
   guide: ReviewGuide | null
@@ -69,7 +70,7 @@ export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo }: Pr
 
           <section>
             <h4>Intent</h4>
-            <p>{guide.intent}</p>
+            <Markdown text={guide.intent} onCodeRef={onGoTo} />
             <p className="small muted">{SOURCE_LABEL[guide.intentSource]}</p>
           </section>
 
@@ -78,7 +79,9 @@ export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo }: Pr
               <h4>⚠ Not explained by the intent</h4>
               <ul className="bullets">
                 {guide.mismatches.map((m, i) => (
-                  <li key={i}>{m}</li>
+                  <li key={i}>
+                    <Markdown text={m} onCodeRef={onGoTo} />
+                  </li>
                 ))}
               </ul>
             </section>
@@ -94,8 +97,10 @@ export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo }: Pr
                       {fileName(r.path)}
                       {r.line ? `:${r.line}` : ''}
                     </button>
-                    <div>{r.rule}</div>
-                    <div className="small muted">{r.change}</div>
+                    <Markdown text={r.rule} onCodeRef={onGoTo} />
+                    <div className="small muted">
+                      <Markdown text={r.change} />
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -106,7 +111,9 @@ export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo }: Pr
             <h4>What changed</h4>
             <ul className="bullets">
               {guide.summary.map((s, i) => (
-                <li key={i}>{s}</li>
+                <li key={i}>
+                  <Markdown text={s} onCodeRef={onGoTo} />
+                </li>
               ))}
             </ul>
           </section>
@@ -120,7 +127,9 @@ export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo }: Pr
                     <span className={`risk-dot risk-${f.risk}`} /> {fileName(f.path)}
                   </button>
                   <span className="small muted"> · {f.role}</span>
-                  <div className="small">{f.why}</div>
+                  <div className="small">
+                    <Markdown text={f.why} onCodeRef={onGoTo} />
+                  </div>
                 </li>
               ))}
             </ol>
@@ -131,7 +140,9 @@ export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo }: Pr
               <h4>Questions for the author</h4>
               <ul className="bullets">
                 {guide.questions.map((q, i) => (
-                  <li key={i}>{q}</li>
+                  <li key={i}>
+                    <Markdown text={q} onCodeRef={onGoTo} />
+                  </li>
                 ))}
               </ul>
             </section>

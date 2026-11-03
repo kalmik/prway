@@ -54,6 +54,8 @@ export interface PullSummary {
   url: string
   /** The signed-in user is a requested reviewer (team requests are not counted yet). */
   reviewRequested: boolean
+  /** Your latest review on GitHub, if any. `stale`: the PR got new commits after it. */
+  myReview?: { state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'DISMISSED'; stale: boolean }
 }
 
 export interface PullDetail extends PullSummary {
@@ -118,6 +120,52 @@ export interface ReviewGuide {
   truncatedFiles: string[]
 }
 
+// ---- File-by-file review walkthrough ----
+
+/** Why PRway pre-approved a hunk without asking you. */
+export interface HunkAuto {
+  kind: 'imports' | 'comments' | 'blank' | 'formatting' | 'moved' | 'ai'
+  reason: string
+}
+
+/** One hunk of a file diff (a "chunk" in the UI), the unit you approve locally. */
+export interface Hunk {
+  index: number
+  oldStart: number
+  oldLines: number
+  newStart: number
+  newLines: number
+  /** Function context git prints after @@, e.g. "def pick_inventory(". */
+  header: string
+  /** Hash of the changed lines: the same hunk keeps its approval after unrelated new commits. */
+  hash: string
+  added: number
+  deleted: number
+  /** Set when a rule says the hunk can't change behaviour (imports, comments, formatting, moved code). */
+  auto?: HunkAuto
+}
+
+/** AI explanation of one file, hunk by hunk. Saved per head commit. */
+export interface FileWalkthrough {
+  path: string
+  headSha: string
+  summary: string
+  hints: string[]
+  refs: { path: string; line: number | null; why: string }[]
+  hunks: {
+    index: number
+    hash: string
+    summary: string
+    notes: string[]
+    risk: Risk
+    /** The model says this hunk can't change behaviour (e.g. log wording, a local rename). */
+    trivial?: boolean
+    trivialReason?: string
+  }[]
+  model: string
+  createdAt: string
+}
+
 // ---- AI provider settings ----
 
 export type AiProviderId = 'claude-code' | 'anthropic-api'
@@ -147,6 +195,16 @@ export interface WorktreeInfo {
 export interface SideLines {
   left: number[]
   right: number[]
+}
+
+/** Result of removing worktrees of PRs that are no longer open. */
+export interface CleanupReport {
+  /** PR numbers whose worktree was removed. */
+  removed: number[]
+  /** Closed PRs whose worktree has local changes: kept, remove them by hand. */
+  dirty: number[]
+  /** Skipped because a cleanup ran recently (automatic runs only). */
+  skipped?: boolean
 }
 
 export interface FileDiff {
@@ -185,6 +243,21 @@ export interface ReviewThread {
   resolved: boolean
   outdated: boolean
   comments: ReviewComment[]
+}
+
+/** One entry of the PR's Conversation tab, in date order. */
+export interface ConversationItem {
+  kind: 'description' | 'comment' | 'review'
+  id: string
+  author: string
+  authorAvatar: string
+  body: string
+  createdAt: string
+  url: string
+  /** Reviews only: APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED. */
+  state?: string
+  /** Reviews only: inline comments that came with it. */
+  inlineCount?: number
 }
 
 /** A comment written in PRway, not sent yet. Sent with the next review. */
@@ -332,12 +405,21 @@ export interface PrwayApi {
     threads(repo: string, number: number): Promise<ReviewThread[]>
     reply(repo: string, number: number, commentId: number, body: string): Promise<ReviewComment>
     setResolved(threadId: string, resolved: boolean): Promise<void>
+    /** Description, general comments and review summaries, oldest first. */
+    conversation(repo: string, number: number): Promise<ConversationItem[]>
+    /** Posts a general comment on the PR (Conversation tab on GitHub). */
+    comment(repo: string, number: number, body: string): Promise<ConversationItem>
   }
   worktree: {
     prepare(repo: string, number: number): Promise<WorktreeInfo>
     fileDiff(repo: string, number: number, file: ChangedFile): Promise<FileDiff>
     reveal(repo: string, number: number): Promise<void>
     remove(repo: string, number: number): Promise<void>
+    /**
+     * Removes worktrees of PRs that are closed or merged (after saving merged ones to the knowledge base).
+     * `keep`: PR numbers open in a tab. `auto`: at most every 30 minutes per repo.
+     */
+    cleanup(repo: string, keep: number[], auto?: boolean): Promise<CleanupReport>
   }
   code: {
     /** Where `word` is defined. `qualifier` is the text before a dot, e.g. "Repo" in "Repo.get". */
@@ -349,6 +431,16 @@ export interface PrwayApi {
   context: {
     changedFunctions(repo: string, number: number, path: string): Promise<ChangedFunction[]>
     forFunction(repo: string, number: number, fn: ChangedFunction): Promise<FunctionContext>
+  }
+  review: {
+    /** Hunks of every changed file, from the merge base to the PR head. */
+    hunks(repo: string, number: number): Promise<Record<string, Hunk[]>>
+    /** The saved walkthrough for a file at the current head, if any. */
+    cachedWalkthrough(repo: string, number: number, path: string): Promise<FileWalkthrough | null>
+    /** Explains one file hunk by hunk (cached; `regenerate` forces a new one). */
+    walkthrough(repo: string, number: number, path: string, regenerate?: boolean): Promise<FileWalkthrough>
+    /** Makes the missing walkthroughs for these files in the background (2 at a time); resolves when done. */
+    prepareAll(repo: string, number: number, paths: string[]): Promise<number>
   }
   chat: {
     /** Asks a question about the PR. The diff, guide and context are sent along with the conversation. */
@@ -376,6 +468,11 @@ export interface PrwayApi {
     /** The saved guide for the PR's current head commit, if any. */
     get(repo: string, number: number): Promise<ReviewGuide | null>
     generate(repo: string, number: number): Promise<ReviewGuide>
+  }
+  /** UI state saved by the main process (survives crashes, unlike localStorage). */
+  state: {
+    loadAll(): Record<string, unknown>
+    set(key: string, value: unknown): void
   }
   openExternal(url: string): Promise<void>
   onNotifications(cb: (items: PrNotification[]) => void): () => void
