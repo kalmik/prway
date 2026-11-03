@@ -32,13 +32,34 @@ const api: PrwayApi = {
   pulls: {
     list: call('pulls:list'),
     get: call('pulls:get'),
-    submitReview: call('pulls:submitReview')
+    submitReview: call('pulls:submitReview'),
+    threads: call('pulls:threads'),
+    reply: call('pulls:reply'),
+    setResolved: call('pulls:setResolved')
   },
   worktree: {
     prepare: call('worktree:prepare'),
     fileDiff: call('worktree:fileDiff'),
     reveal: call('worktree:reveal'),
     remove: call('worktree:remove')
+  },
+  code: {
+    definitions: call('code:definitions'),
+    references: call('code:references'),
+    readFile: call('code:readFile')
+  },
+  context: {
+    changedFunctions: call('context:changedFunctions'),
+    forFunction: call('context:forFunction')
+  },
+  chat: {
+    send: call('chat:send')
+  },
+  kb: {
+    related: call('kb:related'),
+    sync: call('kb:sync'),
+    status: call('kb:status'),
+    reveal: call('kb:reveal')
   },
   notifications: {
     list: call('notifications:list'),

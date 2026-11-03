@@ -32,9 +32,13 @@ export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo }: Pr
   const fileName = (p: string) => p.split('/').pop()
 
   return (
-    <aside className="guide">
+    <div className="panel-body guide">
       <div className="guide-header">
-        <strong>Review guide</strong>
+        <span className="small muted">
+          {guide
+            ? `${guide.model} via ${guide.provider === 'claude-code' ? 'Claude Code' : 'Anthropic API'} · ${timeAgo(guide.createdAt)}`
+            : 'AI summary of the intent, business rules, reading order and lines to check'}
+        </span>
         <button className={guide ? '' : 'primary'} disabled={busy} onClick={onGenerate}>
           {busy ? 'Thinking…' : guide ? 'Regenerate' : 'Generate'}
         </button>
@@ -133,11 +137,8 @@ export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo }: Pr
             </section>
           )}
 
-          <p className="small muted">
-            {guide.model} via {guide.provider === 'claude-code' ? 'Claude Code' : 'Anthropic API'} · {timeAgo(guide.createdAt)}
-          </p>
         </div>
       )}
-    </aside>
+    </div>
   )
 }

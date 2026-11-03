@@ -61,6 +61,16 @@ export class GitHub {
     return (await this.request<T>(path)).data
   }
 
+  /** GitHub GraphQL API. GraphQL errors come back with status 200, so they are checked here. */
+  async graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+    const res = await this.request<{ data?: T; errors?: { message: string }[] }>('/graphql', {
+      method: 'POST',
+      body: { query, variables }
+    })
+    if (res.data.errors?.length) throw new GitHubError(200, res.data.errors.map((e) => e.message).join('; '))
+    return res.data.data as T
+  }
+
   /** Follows the Link: rel="next" header until `max` items are collected. */
   async paginate<T>(path: string, max = 500, onPage?: (headers: Headers) => void): Promise<T[]> {
     const items: T[] = []

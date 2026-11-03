@@ -67,7 +67,7 @@ export interface PullDetail extends PullSummary {
 export type FileStatus = 'A' | 'M' | 'D' | 'R' | 'C' | 'T'
 
 /** Why a file is considered noise: it doesn't need a careful read. */
-export type NoiseKind = 'generated' | 'rename-only' | 'formatting-only'
+export type NoiseKind = 'generated' | 'rename-only' | 'formatting-only' | 'moved' | 'repo-rule'
 
 export interface ChangedFile {
   path: string
@@ -143,11 +143,152 @@ export interface WorktreeInfo {
   files: ChangedFile[]
 }
 
+/** Line numbers per side of a diff: LEFT = base (old) file, RIGHT = PR head (new) file. */
+export interface SideLines {
+  left: number[]
+  right: number[]
+}
+
 export interface FileDiff {
   original: string
   modified: string
   /** Set when the file is binary or too large to show; contents are then empty. */
   skipped?: 'binary' | 'too-large'
+  /** Lines GitHub accepts review comments on (inside a diff hunk). */
+  commentable: SideLines
+  /** Lines that git sees as moved code (within or between files). */
+  moved: SideLines
+}
+
+// ---- Inline review comments ----
+
+export type DiffSide = 'LEFT' | 'RIGHT'
+
+export interface ReviewComment {
+  /** REST id, used to reply. */
+  id: number
+  author: string
+  authorAvatar: string
+  body: string
+  createdAt: string
+  url: string
+}
+
+export interface ReviewThread {
+  /** GraphQL node id, used to resolve. */
+  id: string
+  path: string
+  /** Line in the current diff; null when the thread is outdated or on the whole file. */
+  line: number | null
+  startLine: number | null
+  side: DiffSide
+  resolved: boolean
+  outdated: boolean
+  comments: ReviewComment[]
+}
+
+/** A comment written in PRway, not sent yet. Sent with the next review. */
+export interface DraftComment {
+  id: string
+  path: string
+  line: number
+  startLine?: number
+  side: DiffSide
+  body: string
+  /** PR head commit the line numbers refer to. */
+  headSha: string
+}
+
+// ---- Code navigation and context ----
+
+export interface CodeLocation {
+  path: string
+  line: number
+  text: string
+  /** Set for definitions, e.g. "function", "module". */
+  kind?: string
+}
+
+export interface CodeSymbol {
+  name: string
+  kind: string
+  line: number
+  endLine: number
+  /** Enclosing module or class, e.g. "Warehouse.Inbound.Receiving". */
+  container?: string
+}
+
+export interface ChangedFunction extends CodeSymbol {
+  path: string
+  /** Changed lines inside it (new-file numbers). */
+  changedLines: number
+}
+
+export interface PastPr {
+  number: number
+  title: string
+  url: string
+  /** Review comments that PR got on this file. */
+  comments: { author: string; body: string; url: string }[]
+}
+
+export interface HistoryCommit {
+  sha: string
+  date: string
+  author: string
+  subject: string
+  pr?: PastPr
+}
+
+export interface FunctionContext {
+  fn: ChangedFunction
+  /** Earlier commits that touched these lines, newest first (the PR's own commits left out). */
+  history: HistoryCommit[]
+  callers: CodeLocation[]
+  /** Callers inside test files. */
+  tests: CodeLocation[]
+  /** More callers exist than shown. */
+  truncated: boolean
+}
+
+// ---- Chat about a PR ----
+
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  text: string
+}
+
+// ---- Knowledge base ----
+
+export interface KbEntry {
+  repo: string
+  number: number
+  title: string
+  url: string
+  author: string
+  mergedAt: string
+  intent: string
+  rules: { path: string; line: number | null; rule: string; change: string }[]
+  decisions: { reviewer: string; state: string; body: string }[]
+  discussions: { path: string; line: number | null; resolved: boolean; author: string; body: string }[]
+  files: string[]
+  /** "path#name" of the functions the PR changed. */
+  symbols: string[]
+  domains: string[]
+}
+
+export interface KbMatch {
+  entry: KbEntry
+  files: string[]
+  symbols: string[]
+}
+
+export interface KbStatus {
+  entries: number
+  folder: string
+  lastSync: string | null
+  /** PRs added by the last sync. */
+  added: number
 }
 
 export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'
@@ -186,13 +327,40 @@ export interface PrwayApi {
   pulls: {
     list(repo: string): Promise<PullSummary[]>
     get(repo: string, number: number): Promise<PullDetail>
-    submitReview(repo: string, number: number, event: ReviewEvent, body: string): Promise<void>
+    /** Submits a review with the given drafts as inline comments, on the head commit PRway shows. */
+    submitReview(repo: string, number: number, event: ReviewEvent, body: string, comments: DraftComment[]): Promise<void>
+    threads(repo: string, number: number): Promise<ReviewThread[]>
+    reply(repo: string, number: number, commentId: number, body: string): Promise<ReviewComment>
+    setResolved(threadId: string, resolved: boolean): Promise<void>
   }
   worktree: {
     prepare(repo: string, number: number): Promise<WorktreeInfo>
     fileDiff(repo: string, number: number, file: ChangedFile): Promise<FileDiff>
     reveal(repo: string, number: number): Promise<void>
     remove(repo: string, number: number): Promise<void>
+  }
+  code: {
+    /** Where `word` is defined. `qualifier` is the text before a dot, e.g. "Repo" in "Repo.get". */
+    definitions(repo: string, number: number, word: string, qualifier?: string): Promise<CodeLocation[]>
+    references(repo: string, number: number, word: string): Promise<{ locations: CodeLocation[]; truncated: boolean }>
+    /** Any file at the PR head, for files the PR did not change. */
+    readFile(repo: string, number: number, path: string): Promise<{ text: string; skipped?: FileDiff['skipped'] }>
+  }
+  context: {
+    changedFunctions(repo: string, number: number, path: string): Promise<ChangedFunction[]>
+    forFunction(repo: string, number: number, fn: ChangedFunction): Promise<FunctionContext>
+  }
+  chat: {
+    /** Asks a question about the PR. The diff, guide and context are sent along with the conversation. */
+    send(repo: string, number: number, messages: ChatMessage[]): Promise<ChatMessage>
+  }
+  kb: {
+    /** Knowledge base entries about the code this PR touches. */
+    related(repo: string, number: number): Promise<KbMatch[]>
+    /** Adds merged PRs you reviewed in PRway. */
+    sync(repo: string): Promise<KbStatus>
+    status(repo: string): Promise<KbStatus>
+    reveal(repo: string): Promise<void>
   }
   notifications: {
     list(): Promise<PrNotification[]>

@@ -89,25 +89,39 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 - Guides are saved per head commit in `~/.prway/guides/`, marked stale when new commits arrive, and can be regenerated.
 - AI settings: provider (Claude Code CLI = subscription, or Anthropic API key), model, effort.
 
+**Milestone 3 — review in depth**
+- Layout: collapsible PR list; the diff takes the middle, with a resizable bottom panel (Guide · Context ·
+  Knowledge · Chat) and an "Ask about this PR" prompt under it.
+- Inline review comments:
+  - GitHub threads show under their lines (GraphQL, with resolved/outdated state); reply, resolve, unresolve.
+  - Click a line number to write a comment (select lines first for a range). Comments stay as pending drafts
+    (saved locally per PR) and go out together with the review, anchored to the head commit PRway shows.
+  - Only lines inside diff hunks take comments, as on GitHub. Outdated threads are listed above the diff.
+- Code navigation at the PR head: ⌘/Ctrl+click or F12 for definitions, Shift+F12 for references, also in files the
+  PR did not change (opened read-only), with a Back button. Built on `git grep` plus per-language definition
+  patterns (Elixir, TS/JS, Python, Go, Ruby, Rust, JVM languages, SQL).
+- Noise filter additions:
+  - `moved`: every changed line is code git sees as moved (`--color-moved`), within or between files; moved lines are
+    also marked in the diff
+  - `formatting-only` beyond whitespace: both versions have the same code tokens (line wrapping; for JS-like files also
+    quote style, semicolons, trailing commas). Skipped for whitespace-sensitive languages.
+  - per-repo rules in `.prway.json` (`skip`, `review`, `domains`), read from the PR base so a PR can't change its own rules
+- Context panel, per changed function: history from `git log -L` (missing blobs fetched in one batch), the PR each
+  commit came from with that PR's review comments on the file, callers, and tests. A compact version (call sites,
+  tests, recent commits) goes into the AI guide prompt.
+- Knowledge base: when a PR you opened in PRway is merged, its intent, business rules, review decisions and changed
+  functions are saved; entries about the same files or functions show in the Knowledge tab and go into the guide prompt.
+- Chat about the PR (same provider and prompt material as the guide).
+
 ### 4.2 Next (in order)
 
-1. **Inline review comments.** Click a diff line to comment. Comments collect in a pending review and are submitted together. Existing threads show on their lines.
-2. **Code navigation in the worktree.** tree-sitter symbols and "go to definition" first, then language servers (LSP) for exact definitions and callers.
-3. **Better noise filter:**
-   - moved code inside and between files (git `--color-moved`)
-   - formatting changes beyond whitespace, by comparing syntax trees (tree-sitter)
-   - per-repo rules in a `.prway.json`
-4. **Context panel**, for each changed function:
-   - history: `git log -L`, past PRs and their review discussions
-   - usage: callers, and tests that cover it
-   - feed this context into the AI guide
-5. **Knowledge base.** After a PR merges, save its intent, the business rules changed and the review decisions:
-   - store them as markdown per domain or path, for example `.prway/kb/pricing.md`, so they're versioned and reviewable
-   - index them by file and symbol
-   - show related entries when a later PR touches the same code
-6. **Packaging:** `electron-builder` for macOS (`.dmg`), Linux (`.AppImage`, `.deb`) and Windows. Code signing and notarization come later.
-7. **More AI providers:** OpenAI, local models through an OpenAI-compatible endpoint, Claude through Bedrock or Vertex.
-8. **Team notifications:** review-request reminders, plus a time-to-first-review metric.
+1. **Packaging:** `electron-builder` for macOS (`.dmg`), Linux (`.AppImage`, `.deb`) and Windows. Code signing and notarization come later.
+2. **More AI providers:** OpenAI, local models through an OpenAI-compatible endpoint, Claude through Bedrock or Vertex.
+3. **Team notifications:** review-request reminders, plus a time-to-first-review metric.
+4. **Precise code understanding:** tree-sitter outlines and language servers (LSP) behind the same `symbols.ts` /
+   `navigator.ts` functions, for exact definitions and callers (the regex version is fast but approximate).
+5. **Syntax-aware formatting check:** compare tree-sitter syntax trees instead of tokens, so whitespace-sensitive
+   languages (Python, YAML) and formatter rewrites (`mix format` parentheses) count as formatting too.
 
 ### 4.3 Ideas, not planned yet
 
@@ -122,9 +136,11 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 │ github/   REST client (fetch), device-flow login,      │  IPC  │ TopBar   repo picker,    │
 │           PRs, notifications poller, access checks     │◄─────►│          bell, ⚙ AI       │
 │ git/      bare partial clone, worktree per PR,         │ typed │ PrList   open PRs        │
-│           name-status/numstat, file contents           │ API   │ PrView   files | diff |  │
-│ review/   noise filter, guide prompt + schema,         │       │          guide panel     │
-│           guide generation and storage                 │       │ Monaco DiffEditor        │
+│           name-status/numstat, file contents           │ API   │ PrView   files | diff    │
+│ code/     outlines, definitions, callers, history      │       │          + bottom panel  │
+│ review/   noise filter, guide prompt + schema,         │       │ DiffPane Monaco diff,    │
+│           guide generation and storage, chat           │       │          comment zones   │
+│ kb/       knowledge base of merged PRs                 │       │ Context, Knowledge, Chat │
 │ ai/       AiProvider: Claude Code CLI, Anthropic API   │       └──────────────────────────┘
 │ store     settings.json + secrets via safeStorage      │        preload exposes window.prway
 └────────────────────────────────────────────────────────┘        (no Node in the renderer)
@@ -147,6 +163,7 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 | `~/.prway/repos/<owner>/<repo>.git` | bare partial clone |
 | `~/.prway/worktrees/<owner>/<repo>/pr-<n>` | PR checkout |
 | `~/.prway/guides/<owner>/<repo>/pr-<n>/<sha>.json` | saved review guides |
+| `~/.prway/kb/<owner>/<repo>/` | knowledge base: `entries/pr-<n>.json` (source) and `<domain>.md` (readable), a local git repo |
 | `~/.config/prway/` (Linux) · `~/Library/Application Support/prway/` (macOS) | settings.json, encrypted token / API key |
 
 ## 6. Tech stack
@@ -167,6 +184,9 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 | Worktree per PR, from a bare partial clone | Several PRs at once, no branch switching, file contents download on demand |
 | Claude Code CLI as default AI provider | Uses the reviewer's own Claude subscription, no API key needed |
 | Deterministic noise filter before AI | Cheaper, predictable, and the model sees less noise |
+| Code navigation from `git grep` + language patterns first | Works on any repo with no per-language install; tree-sitter / LSP can replace it later behind the same functions |
+| Review comments as local drafts, sent with the review | One notification for the author, like GitHub's pending review, and drafts survive restarts |
+| Knowledge base stored locally as JSON + markdown in a git repo | Versioned and readable; how to share it with a team is still open (see below) |
 | Name "PRway" | "Diffscope" and "Reviewport" were already used by other tools; `prway` is free on npm and GitHub |
 
 ## 8. Platform notes
@@ -175,14 +195,15 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 - **macOS:** expected to work, not tested yet. `safeStorage` uses the Keychain, and the git from Xcode Command Line Tools is enough.
   - Known issue: an app opened from Finder or the Dock doesn't get your shell's `PATH`, so `claude` may not be found.
   - Workaround: `PRWAY_CLAUDE_BIN=/path/to/claude`.
+  - Fix planned: also search the usual install folders (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`).
 - **Claude Code account:** reviews use whatever `CLAUDE_CONFIG_DIR` PRway was started with. Set
   `PRWAY_CLAUDE_CONFIG_DIR` to use a different account for reviews only (`~/.claude` = the default account).
-  - Fix planned: also search the usual install folders (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`).
 - **Windows:** not tried.
 
 ## 9. Open questions
 
-- How should the knowledge base be shared across a team: in the repo (`.prway/kb/`) or in a separate store?
+- How should the knowledge base be shared across a team: commit it into the repo (`.prway/kb/`), push the local kb git
+  repo somewhere, or a separate store? Today it lives in `~/.prway/kb/` only.
 - How much history should go into the AI context before it gets too expensive or slow?
 - Should the AI guide show up in GitHub too (one PR comment), or stay private to the reviewer?
 - Pricing and distribution if this becomes a product: open source with a paid team tier?

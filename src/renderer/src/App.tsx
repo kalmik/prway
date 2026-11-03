@@ -4,6 +4,7 @@ import { Login } from './components/Login'
 import { PrList } from './components/PrList'
 import { PrView } from './components/PrView'
 import { TopBar } from './components/TopBar'
+import { storage } from './util'
 
 const api = window.prway
 
@@ -12,6 +13,11 @@ export function App() {
   const [repo, setRepo] = useState<string | null>(null)
   const [prNumber, setPrNumber] = useState<number | null>(null)
   const [notifications, setNotifications] = useState<PrNotification[]>([])
+  const [sidebarOpen, setSidebarOpenState] = useState(() => storage.get('ui.sidebarOpen', true))
+  const setSidebarOpen = (open: boolean) => {
+    setSidebarOpenState(open)
+    storage.set('ui.sidebarOpen', open)
+  }
 
   useEffect(() => {
     void api.auth.state().then(setAuth)
@@ -61,13 +67,22 @@ export function App() {
         <div className="banner">No system keyring found: you will need to sign in again next time you open PRway.</div>
       )}
       <div className="workspace">
-        <aside className="sidebar">
-          {repo ? (
-            <PrList repo={repo} selected={prNumber} onSelect={setPrNumber} />
-          ) : (
-            <p className="muted pad">Pick a repository at the top to see its open pull requests.</p>
-          )}
-        </aside>
+        {sidebarOpen ? (
+          <aside className="sidebar">
+            {repo ? (
+              <PrList repo={repo} selected={prNumber} onSelect={setPrNumber} onCollapse={() => setSidebarOpen(false)} />
+            ) : (
+              <p className="muted pad">Pick a repository at the top to see its open pull requests.</p>
+            )}
+          </aside>
+        ) : (
+          <aside className="sidebar-rail">
+            <button className="icon" title="Show pull requests" onClick={() => setSidebarOpen(true)}>
+              »
+            </button>
+            <span className="rail-label">Pull requests</span>
+          </aside>
+        )}
         <main className="main">
           {repo && prNumber ? (
             <PrView key={`${repo}#${prNumber}`} repo={repo} number={prNumber} />

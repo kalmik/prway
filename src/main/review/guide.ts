@@ -8,6 +8,8 @@ import type { ChangedFile, PullDetail, ReviewGuide } from '../../shared/types'
 import { getAiSettings, getProvider } from '../ai/provider'
 import type { GitHub } from '../github/api'
 import type { WorktreeManager } from '../git/worktrees'
+import type { CodeNavigator } from '../code/navigator'
+import { kbPromptText, type KnowledgeBase } from '../kb/knowledge'
 import { dataDir } from '../store'
 import { buildPrompt, GUIDE_SCHEMA, normalizeFiles, SYSTEM_PROMPT, type ModelGuide } from './guidePrompt'
 
@@ -47,30 +49,46 @@ async function linkedIssues(gh: GitHub, pull: PullDetail): Promise<string> {
   return parts.join('\n\n')
 }
 
-export async function generateGuide(
-  gh: GitHub,
-  worktrees: WorktreeManager,
-  pull: PullDetail,
-  files: ChangedFile[],
-  headSha: string
-): Promise<ReviewGuide> {
-  const settings = getAiSettings()
-  const provider = getProvider(settings.provider)
+export interface GuideDeps {
+  gh: GitHub
+  worktrees: WorktreeManager
+  navigator: CodeNavigator
+  kb: KnowledgeBase
+}
 
+/** Everything the model gets about a PR: shared by the guide and the chat. */
+export async function prMaterial({ gh, worktrees, navigator, kb }: GuideDeps, pull: PullDetail, files: ChangedFile[]) {
   const review = files.filter((f) => !f.noise)
   const skipped = files.filter((f) => f.noise)
-  const [issues, commits, diffs] = await Promise.all([
+  const [issues, commits, diffs, context, knowledge] = await Promise.all([
     linkedIssues(gh, pull),
     worktrees.commitLog(pull.repo, pull.number),
-    Promise.all(review.map((f) => worktrees.unifiedDiff(pull.repo, pull.number, f)))
+    Promise.all(review.map((f) => worktrees.unifiedDiff(pull.repo, pull.number, f))),
+    navigator.guideContext(pull.repo, pull.number, review).catch((err) => {
+      console.warn('[guide] context failed:', (err as Error).message)
+      return ''
+    }),
+    relatedKnowledge(navigator, kb, pull.repo, pull.number, review)
+      .then(kbPromptText)
+      .catch(() => '')
   ])
-  const { prompt, truncatedFiles } = buildPrompt({
-    pull,
-    issues,
-    commits,
-    review: review.map((file, i) => ({ file, diff: diffs[i] })),
-    skipped
-  })
+  return { review, ...buildPrompt({ pull, issues, commits, review: review.map((file, i) => ({ file, diff: diffs[i] })), skipped, context, knowledge }) }
+}
+
+/** Knowledge base entries about the files and functions this PR changes. */
+export async function relatedKnowledge(navigator: CodeNavigator, kb: KnowledgeBase, repo: string, number: number, files: ChangedFile[]) {
+  const symbols: string[] = []
+  for (const f of files.slice(0, 40)) {
+    const fns = await navigator.changedFunctions(repo, number, f.path).catch(() => [])
+    for (const fn of fns) if (fn.kind !== 'module' && fn.kind !== 'class') symbols.push(`${f.path}#${fn.name}`)
+  }
+  return kb.related(repo, number, files.map((f) => f.path), symbols)
+}
+
+export async function generateGuide(deps: GuideDeps, pull: PullDetail, files: ChangedFile[], headSha: string): Promise<ReviewGuide> {
+  const settings = getAiSettings()
+  const provider = getProvider(settings.provider)
+  const { review, prompt, truncatedFiles } = await prMaterial(deps, pull, files)
 
   const answer = await provider.generate<ModelGuide>({
     system: SYSTEM_PROMPT,

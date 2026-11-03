@@ -1,13 +1,36 @@
 import { app, BrowserWindow, ipcMain, Notification, shell } from 'electron'
 import { join } from 'node:path'
-import type { AiSettings, AuthState, ChangedFile, GhUser, PrNotification, ReviewEvent } from '../shared/types'
+import type {
+  AiSettings,
+  AuthState,
+  ChangedFile,
+  ChangedFunction,
+  ChatMessage,
+  DraftComment,
+  GhUser,
+  PrNotification,
+  ReviewEvent,
+  WorktreeInfo
+} from '../shared/types'
 import { GitHub } from './github/api'
 import { cancelDeviceFlow, CLIENT_ID, startDeviceFlow, waitForDeviceFlow } from './github/auth'
 import { NotificationPoller } from './github/notifications'
-import { getPull, getViewer, listPulls, listRepos, submitReview } from './github/pulls'
+import {
+  getPull,
+  getViewer,
+  listPulls,
+  listRepos,
+  listThreads,
+  replyToComment,
+  setThreadResolved,
+  submitReview
+} from './github/pulls'
 import { WorktreeManager } from './git/worktrees'
+import { CodeNavigator } from './code/navigator'
+import { KnowledgeBase } from './kb/knowledge'
 import { API_KEY_SECRET, getAiSettings, saveAiSettings } from './ai/provider'
-import { generateGuide, loadGuide, testProvider } from './review/guide'
+import { chat } from './review/chat'
+import { generateGuide, loadGuide, relatedKnowledge, testProvider, type GuideDeps } from './review/guide'
 import { clearSecret, clearToken, loadSettings, loadToken, saveSecret, saveSettings, saveToken } from './store'
 
 // ---- Session state (one signed-in GitHub account) ----
@@ -18,6 +41,27 @@ let viewer: GhUser | null = null
 let tokenPersisted = false
 let poller: NotificationPoller | null = null
 const worktrees = new WorktreeManager(() => gh?.token ?? null)
+const navigator = new CodeNavigator(worktrees, () => gh)
+const kb = new KnowledgeBase(worktrees, () => gh)
+/** Last prepared worktree per PR ("owner/name#n"). */
+const trees = new Map<string, WorktreeInfo>()
+
+async function prepare(repo: string, number: number): Promise<WorktreeInfo> {
+  const { gh, me } = requireGh()
+  const pull = await getPull(gh, repo, number, me)
+  const tree = await worktrees.prepare(repo, number, pull.baseRef)
+  trees.set(`${repo}#${number}`, tree)
+  return tree
+}
+
+/** The prepared worktree, preparing it when PRway has not done so since it started. */
+async function prepared(repo: string, number: number): Promise<WorktreeInfo> {
+  return trees.get(`${repo}#${number}`) ?? prepare(repo, number)
+}
+
+function guideDeps(): GuideDeps {
+  return { gh: requireGh().gh, worktrees, navigator, kb }
+}
 
 function requireGh(): { gh: GitHub; me: string } {
   if (!gh || !viewer) throw new Error('Not signed in')
@@ -112,6 +156,8 @@ function registerIpc(): void {
 
   handle('pulls:list', (repo: string) => {
     const { gh, me } = requireGh()
+    // Merged PRs you reviewed go into the knowledge base; checked at most every 15 minutes.
+    kb.syncInBackground(repo)
     return listPulls(gh, repo, me)
   })
   handle('pulls:get', async (repo: string, number: number) => {
@@ -119,21 +165,66 @@ function registerIpc(): void {
     const { baseSha: _baseSha, ...pull } = await getPull(gh, repo, number, me)
     return pull
   })
-  handle('pulls:submitReview', (repo: string, number: number, event: ReviewEvent, body: string) =>
-    submitReview(requireGh().gh, repo, number, event, body)
+  handle('pulls:submitReview', (repo: string, number: number, event: ReviewEvent, body: string, comments: DraftComment[] = []) =>
+    submitReview(requireGh().gh, repo, number, event, body, comments, worktrees.headSha(repo, number))
   )
+  handle('pulls:threads', (repo: string, number: number) => listThreads(requireGh().gh, repo, number))
+  handle('pulls:reply', (repo: string, number: number, commentId: number, body: string) =>
+    replyToComment(requireGh().gh, repo, number, commentId, body)
+  )
+  handle('pulls:setResolved', (threadId: string, resolved: boolean) => setThreadResolved(requireGh().gh, threadId, resolved))
 
-  handle('worktree:prepare', async (repo: string, number: number) => {
-    const { gh, me } = requireGh()
-    const pull = await getPull(gh, repo, number, me)
-    return worktrees.prepare(repo, number, pull.baseRef)
-  })
+  handle('worktree:prepare', (repo: string, number: number) => prepare(repo, number))
   handle('worktree:fileDiff', (repo: string, number: number, file: ChangedFile) => worktrees.fileDiff(repo, number, file))
   handle('worktree:reveal', async (repo: string, number: number) => {
     const err = await shell.openPath(worktrees.worktreeDir(repo, number))
     if (err) throw new Error(err)
   })
-  handle('worktree:remove', (repo: string, number: number) => worktrees.remove(repo, number))
+  handle('worktree:remove', (repo: string, number: number) => {
+    trees.delete(`${repo}#${number}`)
+    return worktrees.remove(repo, number)
+  })
+
+  handle('code:definitions', async (repo: string, number: number, word: string, qualifier?: string) => {
+    await prepared(repo, number)
+    return navigator.definitions(repo, number, word, qualifier)
+  })
+  handle('code:references', async (repo: string, number: number, word: string) => {
+    await prepared(repo, number)
+    return navigator.references(repo, number, word)
+  })
+  handle('code:readFile', async (repo: string, number: number, path: string) => {
+    await prepared(repo, number)
+    return navigator.readFile(repo, number, path)
+  })
+  handle('context:changedFunctions', async (repo: string, number: number, path: string) => {
+    await prepared(repo, number)
+    return navigator.changedFunctions(repo, number, path)
+  })
+  handle('context:forFunction', async (repo: string, number: number, fn: ChangedFunction) => {
+    await prepared(repo, number)
+    return navigator.forFunction(repo, number, fn)
+  })
+
+  handle('chat:send', async (repo: string, number: number, messages: ChatMessage[]) => {
+    const { gh, me } = requireGh()
+    const { baseSha: _baseSha, ...pull } = await getPull(gh, repo, number, me)
+    const tree = await prepared(repo, number)
+    return chat(guideDeps(), pull, tree.files, loadGuide(repo, number, tree.headSha), messages)
+  })
+
+  handle('kb:related', async (repo: string, number: number) => {
+    const tree = await prepared(repo, number)
+    return relatedKnowledge(navigator, kb, repo, number, tree.files.filter((f) => !f.noise))
+  })
+  handle('kb:sync', (repo: string) => kb.sync(repo))
+  handle('kb:status', (repo: string) => kb.status(repo))
+  handle('kb:reveal', async (repo: string) => {
+    const s = kb.status(repo)
+    if (!s.entries) throw new Error('The knowledge base for this repo is empty: it fills up as PRs you reviewed get merged.')
+    const err = await shell.openPath(s.folder)
+    if (err) throw new Error(err)
+  })
 
   handle('notifications:list', () => poller?.list() ?? [])
   handle('notifications:markRead', (id: string) => poller?.markRead(id))
@@ -162,8 +253,8 @@ function registerIpc(): void {
   handle('guide:generate', async (repo: string, number: number) => {
     const { gh, me } = requireGh()
     const { baseSha: _baseSha, ...pull } = await getPull(gh, repo, number, me)
-    const tree = await worktrees.prepare(repo, number, pull.baseRef)
-    return generateGuide(gh, worktrees, pull, tree.files, tree.headSha)
+    const tree = await prepare(repo, number)
+    return generateGuide(guideDeps(), pull, tree.files, tree.headSha)
   })
 
   handle('openExternal', (url: string) => {

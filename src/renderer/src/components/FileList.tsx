@@ -9,11 +9,13 @@ interface Props {
   guide: ReviewGuide | null
   selected: ChangedFile | null
   viewed: Set<string>
+  /** Open threads plus pending drafts, per file. */
+  commentCounts: Map<string, number>
   onSelect: (f: ChangedFile) => void
   onToggleViewed: (path: string) => void
 }
 
-export function FileList({ files, guide, selected, viewed, onSelect, onToggleViewed }: Props) {
+export function FileList({ files, guide, selected, viewed, commentCounts, onSelect, onToggleViewed }: Props) {
   const [showSkipped, setShowSkipped] = useState(() => storage.get('ui.showSkipped', false))
 
   const toReview = files.filter((f) => !f.noise)
@@ -36,6 +38,11 @@ export function FileList({ files, guide, selected, viewed, onSelect, onToggleVie
         </span>
         <span className="file-name">{f.path.split('/').pop()}</span>
         <span className="file-dir">{f.path.split('/').slice(0, -1).join('/')}</span>
+        {!!commentCounts.get(f.path) && (
+          <span className="comment-count" title="Open comments and pending drafts">
+            {commentCounts.get(f.path)}
+          </span>
+        )}
         {f.additions !== null && (
           <span className="file-stat">
             <span className="add">+{f.additions}</span> <span className="del">−{f.deletions}</span>

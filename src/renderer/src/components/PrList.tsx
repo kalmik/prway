@@ -6,7 +6,17 @@ const api = window.prway
 
 type Filter = 'all' | 'requested'
 
-export function PrList({ repo, selected, onSelect }: { repo: string; selected: number | null; onSelect: (n: number) => void }) {
+export function PrList({
+  repo,
+  selected,
+  onSelect,
+  onCollapse
+}: {
+  repo: string
+  selected: number | null
+  onSelect: (n: number) => void
+  onCollapse: () => void
+}) {
   const [pulls, setPulls] = useState<PullSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
@@ -35,9 +45,14 @@ export function PrList({ repo, selected, onSelect }: { repo: string; selected: n
             For me ({requested})
           </button>
         </div>
-        <button className="icon" title="Refresh" onClick={load}>
-          ⟳
-        </button>
+        <div className="row tight">
+          <button className="icon" title="Refresh" onClick={load}>
+            ↻
+          </button>
+          <button className="icon" title="Hide the list (more room for the diff)" onClick={onCollapse}>
+            «
+          </button>
+        </div>
       </div>
 
       {error && <p className="error pad">{error}</p>}

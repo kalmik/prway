@@ -15,11 +15,12 @@ Node version is pinned in `.tool-versions` (asdf).
 ## Layout
 
 - `src/shared/types.ts`: types and the `PrwayApi` IPC contract. Change it first when adding a feature.
-- `src/main/`: Electron main process (GitHub client, git worktrees, noise filter, AI guide, AI providers)
+- `src/main/`: Electron main process (GitHub client, git worktrees, noise filter, AI guide and chat, AI providers,
+  code navigation and context in `code/`, knowledge base in `kb/`)
 - `src/preload/index.ts`: exposes `window.prway`; must match `PrwayApi`
 - `src/renderer/src/`: React UI
-- Pure modules with no Electron import (`src/main/review/noise.ts`, `src/main/review/guidePrompt.ts`) can be
-  run directly with Node 26 (`node file.ts`) for quick checks.
+- Pure modules with no Electron import (`src/main/review/noise.ts`, `src/main/review/guidePrompt.ts`,
+  `src/main/code/symbols.ts`) can be run directly with Node 26 (`node file.ts`) for quick checks.
 
 ## Rules
 
