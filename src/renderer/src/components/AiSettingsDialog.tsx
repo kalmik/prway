@@ -13,7 +13,7 @@ const MODELS = [
 
 const EFFORTS: AiEffort[] = ['low', 'medium', 'high', 'xhigh', 'max']
 
-export function AiSettingsDialog({ onClose }: { onClose: () => void }) {
+export function AiSettingsDialog({ onClose, embedded }: { onClose: () => void; embedded?: boolean }) {
   const [settings, setSettings] = useState<AiSettings | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [status, setStatus] = useState<AiStatus | null>(null)
@@ -46,11 +46,9 @@ export function AiSettingsDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
-  return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="card dialog">
-        <h3>AI settings</h3>
-        <p className="small muted">Used for the review guide. PRway only sends the PR (description, commits, diff).</p>
+  const body = (
+    <>
+        <p className="small muted">Used for the review guide, file walkthroughs and chat. PRway only sends the PR (description, commits, diff) and repository context.</p>
 
         <fieldset>
           <legend className="small muted">Provider</legend>
@@ -130,6 +128,14 @@ export function AiSettingsDialog({ onClose }: { onClose: () => void }) {
             Save
           </button>
         </div>
+    </>
+  )
+  if (embedded) return <div className="settings-section">{body}</div>
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="card dialog">
+        <h3>AI settings</h3>
+        {body}
       </div>
     </div>
   )

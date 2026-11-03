@@ -62,6 +62,9 @@ export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo }: Pr
       {guide && (
         <div className="guide-body">
           {stale && <p className="small warn-box">New commits since this guide was made. Regenerate to include them.</p>}
+          {guide.instructionsChanged && (
+            <p className="small warn-box">This repository's review instructions changed since this guide was made. Regenerate to apply them.</p>
+          )}
           {guide.truncatedFiles.length > 0 && (
             <p className="small warn-box">
               Some diffs were too long and were cut before sending: {guide.truncatedFiles.map(fileName).join(', ')}

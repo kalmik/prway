@@ -1947,3 +1947,55 @@ li > .md p {
   border-bottom: 1px solid var(--border);
   padding: 6px 12px;
 }
+
+/* ---- Settings page ---- */
+.settings-dialog {
+  width: 860px;
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+}
+.settings-tabs {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+.settings-body {
+  overflow: auto;
+  min-height: 0;
+  padding-right: 4px;
+}
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.prompt-settings textarea.mono,
+textarea.mono {
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 12px;
+}
+.prompt-kind {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.prompt-settings pre {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+.layer-summary {
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+.prompt-preview {
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+.draft-prs .pr-item {
+  opacity: 0.7;
+}
+.my-prs .pr-item {
+  opacity: 0.8;
+}

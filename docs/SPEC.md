@@ -141,6 +141,13 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 - Cleanup of worktrees whose PR is closed or merged: checked with GitHub, merged PRs saved to the knowledge base
   first, worktrees with local changes and PRs open in a tab are kept. Runs at most every 30 minutes when the PR list
   loads, and from the 🧹 button. PRs you approved (no new commits since) collapse into "Approved by you".
+- Settings page (⚙): AI provider/model/effort, and **review prompts per repository**:
+  - repository context (sent with every request) and extra instructions for the guide, file walkthroughs and chat;
+    any of the three can replace PRway's built-in instructions (the output format and the prompt-injection guard stay)
+  - layers, in order: built-in → your "All repositories" → the team's `.prway.json` `"prompts"` (from the PR base) →
+    your settings for that repo; a preview shows the exact system prompt sent
+  - guides record which instructions they were made with and say when they changed; walkthroughs are saved per set of
+    instructions (default instructions keep the old cache)
 - Restores what was open: tabs, the file per PR, drafts, chat and layout live in `ui-state.json` (written on every
   change, so a crash keeps them). A guide made for an older commit is still shown, marked outdated.
 

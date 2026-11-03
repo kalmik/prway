@@ -87,6 +87,11 @@ const api: PrwayApi = {
     loadAll: () => ipcRenderer.sendSync('state:loadAll') as Record<string, unknown>,
     set: (key, value) => ipcRenderer.send('state:set', key, value)
   },
+  prompts: {
+    get: call('prompts:get'),
+    save: call('prompts:save'),
+    preview: call('prompts:preview')
+  },
   openExternal: call('openExternal'),
   onNotifications: (cb) => subscribe<PrNotification[]>('notifications', cb),
   onOpenPr: (cb) => subscribe<OpenPrRequest>('open-pr', cb)

@@ -114,6 +114,7 @@ export function App() {
                 repo={repo}
                 selected={active?.repo === repo ? active.number : null}
                 open={new Set(tabs.filter((t) => t.repo === repo).map((t) => t.number))}
+                me={auth.user.login}
                 onSelect={(p) => openPr(p.repo, p.number, p.title)}
                 onCollapse={() => setSidebarOpen(false)}
               />

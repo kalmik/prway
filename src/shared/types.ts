@@ -118,6 +118,10 @@ export interface ReviewGuide {
   createdAt: string
   /** Files whose diff was too long and was cut before sending. */
   truncatedFiles: string[]
+  /** Hash of the instructions used (see Settings → Review prompts). */
+  promptHash?: string
+  /** Set when loading: the repo's instructions changed since this guide was made. */
+  instructionsChanged?: boolean
 }
 
 // ---- File-by-file review walkthrough ----
@@ -164,6 +168,36 @@ export interface FileWalkthrough {
   }[]
   model: string
   createdAt: string
+}
+
+// ---- Prompt customisation (per repository) ----
+
+export type PromptKind = 'guide' | 'walkthrough' | 'chat'
+
+/** One layer of prompt customisation: yours (all repos or one repo) or the team's (.prway.json). */
+export interface PromptLayer {
+  /** About the repository: what the system does, domain terms, conventions. Sent with every AI request. */
+  context: string
+  /** Extra instructions per prompt (or the full replacement when `replace[kind]` is true). */
+  guide: string
+  walkthrough: string
+  chat: string
+  replace: Partial<Record<PromptKind, boolean>>
+}
+
+export interface PromptSettingsView {
+  /** null = "All repositories". */
+  repo: string | null
+  /** What you saved for this scope. */
+  personal: PromptLayer
+  /** Your "All repositories" layer (only when a repo is selected). */
+  global: PromptLayer | null
+  /** The repo's .prway.json "prompts", read from its default branch as fetched last. */
+  team: PromptLayer | null
+  teamSource: string | null
+  builtIn: Record<PromptKind, string>
+  /** Repositories to pick from: the selected one and those with local data. */
+  repos: string[]
 }
 
 // ---- AI provider settings ----
@@ -473,6 +507,12 @@ export interface PrwayApi {
   state: {
     loadAll(): Record<string, unknown>
     set(key: string, value: unknown): void
+  }
+  prompts: {
+    get(repo: string | null): Promise<PromptSettingsView>
+    save(repo: string | null, layer: PromptLayer): Promise<PromptSettingsView>
+    /** The system prompt as it would be sent for this repo. */
+    preview(repo: string | null, kind: PromptKind): Promise<string>
   }
   openExternal(url: string): Promise<void>
   onNotifications(cb: (items: PrNotification[]) => void): () => void

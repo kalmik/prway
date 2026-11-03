@@ -108,6 +108,8 @@ export interface RepoRules {
   skip: { path: string; reason: string }[]
   review: string[]
   domains: { path: string; domain: string }[]
+  /** The team's prompt customisation ("prompts" in .prway.json), parsed by promptLayers.ts. */
+  prompts?: unknown
 }
 
 export const EMPTY_RULES: RepoRules = { skip: [], review: [], domains: [] }
@@ -130,7 +132,7 @@ export function parseRepoRules(text: string): RepoRules {
           .filter((e): e is [string, string] => typeof e[1] === 'string')
           .map(([path, domain]) => ({ path, domain }))
       : []
-  return { skip, review: strings(raw.review), domains }
+  return { skip, review: strings(raw.review), domains, prompts: raw.prompts }
 }
 
 /** Glob match: `**` any depth, `*` within one folder, `?` one character. A pattern without "/" matches the file name anywhere. */

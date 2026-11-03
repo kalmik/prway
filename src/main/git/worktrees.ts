@@ -231,6 +231,11 @@ export class WorktreeManager {
     return this.requireRefs(repo, number)
   }
 
+  /** The PR's .prway.json rules from its last prepare, or null when not prepared in this session. */
+  rulesOrNull(repo: string, number: number): RepoRules | null {
+    return this.refs.get(`${repo}#${number}`)?.rules ?? null
+  }
+
   tokenOrNull(): string | undefined {
     return this.getToken() ?? undefined
   }

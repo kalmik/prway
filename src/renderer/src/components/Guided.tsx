@@ -6,6 +6,7 @@ import { useState, type ReactNode } from 'react'
 import type { ChangedFile, DraftComment, Hunk, PullDetail, ReviewGuide, ReviewThread } from '../../../shared/types'
 import { storage } from '../util'
 import { GuidePanel } from './GuidePanel'
+import { openSettings } from './SettingsDialog'
 import { Markdown } from './Markdown'
 import {
   approvalKey,
@@ -176,10 +177,12 @@ export function OverviewStep({
   pre,
   wt,
   stepPaths,
+  repo,
   onGenerate,
   onGoTo,
   onStart
 }: {
+  repo: string
   guide: ReviewGuide | null
   stale: boolean
   busy: boolean
@@ -218,6 +221,12 @@ export function OverviewStep({
           <input type="checkbox" checked={pre.ai} onChange={(e) => pre.setAi(e.target.checked)} /> Also trust the AI's “trivial” verdicts
           (low-risk only)
         </label>
+        <span className="muted">
+          Review instructions for this repository:{' '}
+          <button className="link" onClick={() => openSettings('prompts', repo)}>
+            customise
+          </button>
+        </span>
         {pre.ai && (
           <span className="muted">
             {wt.preparing ? (

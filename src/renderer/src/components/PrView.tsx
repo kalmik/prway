@@ -842,6 +842,7 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
                   pre={{ rules: preRules, ai: preAi, setRules: setPreRules, setAi: setPreAi }}
                   wt={wt}
                   stepPaths={stepPaths}
+                  repo={repo}
                   onGenerate={generateGuide}
                   onGoTo={(p, l) => openAt(p, l)}
                   onStart={() => {

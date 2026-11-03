@@ -10,6 +10,7 @@ export function PrList({
   repo,
   selected,
   open,
+  me,
   onSelect,
   onCollapse
 }: {
@@ -17,6 +18,8 @@ export function PrList({
   selected: number | null
   /** PRs open in a tab. */
   open: Set<number>
+  /** Your GitHub login: your own PRs get their own collapsed group. */
+  me: string
   onSelect: (p: PullSummary) => void
   onCollapse: () => void
 }) {
@@ -27,6 +30,16 @@ export function PrList({
   const setShowApproved = (v: boolean) => {
     setShowApprovedState(v)
     storage.set('ui.showApproved', v)
+  }
+  const [showMine, setShowMineState] = useState(() => storage.get('ui.showMine', false))
+  const setShowMine = (v: boolean) => {
+    setShowMineState(v)
+    storage.set('ui.showMine', v)
+  }
+  const [showDrafts, setShowDraftsState] = useState(() => storage.get('ui.showDrafts', false))
+  const setShowDrafts = (v: boolean) => {
+    setShowDraftsState(v)
+    storage.set('ui.showDrafts', v)
   }
 
   const [cleanupNote, setCleanupNote] = useState<string | null>(null)
@@ -77,8 +90,12 @@ export function PrList({
   const shown = (pulls ?? []).filter((p) => filter === 'all' || p.reviewRequested)
   // Approved by you and nothing new since: out of the way, in a collapsed group at the bottom.
   const done = (p: PullSummary) => p.myReview?.state === 'APPROVED' && !p.myReview.stale
-  const active = shown.filter((p) => !done(p))
-  const approved = shown.filter(done)
+  // Your own PRs (drafts included) and other people's drafts get collapsed groups; the main list is what needs you.
+  const mine = shown.filter((p) => p.author.toLowerCase() === me.toLowerCase())
+  const others = shown.filter((p) => p.author.toLowerCase() !== me.toLowerCase())
+  const active = others.filter((p) => !done(p) && !p.draft)
+  const approved = others.filter((p) => done(p) && !p.draft)
+  const drafts = others.filter((p) => p.draft)
 
   const item = (p: PullSummary) => (
     <li key={p.number}>
@@ -134,8 +151,18 @@ export function PrList({
       )}
       {!pulls && !error && <p className="muted pad">Loading pull requests…</p>}
       {pulls && shown.length === 0 && <p className="muted pad">Nothing here.</p>}
+      {pulls && shown.length > 0 && active.length === 0 && <p className="muted pad small">Nothing waiting for you: everything is approved or still a draft.</p>}
 
       <ul>{active.map(item)}</ul>
+
+      {mine.length > 0 && (
+        <>
+          <button className="group-toggle small muted" onClick={() => setShowMine(!showMine)}>
+            {showMine ? '▾' : '▸'} My PRs ({mine.length})
+          </button>
+          {showMine && <ul className="my-prs">{mine.map(item)}</ul>}
+        </>
+      )}
 
       {approved.length > 0 && (
         <>
@@ -143,6 +170,15 @@ export function PrList({
             {showApproved ? '▾' : '▸'} Approved by you ({approved.length})
           </button>
           {showApproved && <ul className="approved-prs">{approved.map(item)}</ul>}
+        </>
+      )}
+
+      {drafts.length > 0 && (
+        <>
+          <button className="group-toggle small muted" onClick={() => setShowDrafts(!showDrafts)}>
+            {showDrafts ? '▾' : '▸'} Drafts ({drafts.length})
+          </button>
+          {showDrafts && <ul className="draft-prs">{drafts.map(item)}</ul>}
         </>
       )}
     </div>

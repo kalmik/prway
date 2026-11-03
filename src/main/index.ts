@@ -9,6 +9,8 @@ import type {
   DraftComment,
   GhUser,
   PrNotification,
+  PromptKind,
+  PromptLayer,
   ReviewEvent,
   WorktreeInfo
 } from '../shared/types'
@@ -35,6 +37,7 @@ import { API_KEY_SECRET, getAiSettings, saveAiSettings } from './ai/provider'
 import { chat } from './review/chat'
 import { Walkthroughs } from './review/walkthrough'
 import { generateGuide, loadGuide, relatedKnowledge, testProvider, type GuideDeps } from './review/guide'
+import { previewPrompt, promptsView, savePrompts, systemPrompt } from './review/prompts'
 import {
   clearSecret,
   clearToken,
@@ -294,8 +297,19 @@ function registerIpc(): void {
 
   handle('guide:get', (repo: string, number: number) => {
     const head = worktrees.headSha(repo, number)
-    return head ? loadGuide(repo, number, head) : null
+    const guide = head ? loadGuide(repo, number, head) : null
+    if (!guide?.promptHash) return guide
+    // Tell the UI when the repo's instructions changed since this guide was made.
+    const current = systemPrompt('guide', repo, worktrees.rulesOrNull(repo, number)).hash
+    return { ...guide, instructionsChanged: current !== guide.promptHash }
   })
+
+  handle('prompts:get', (repo: string | null) => promptsView(worktrees, repo))
+  handle('prompts:save', (repo: string | null, layer: PromptLayer) => {
+    savePrompts(repo, layer)
+    return promptsView(worktrees, repo)
+  })
+  handle('prompts:preview', (repo: string | null, kind: PromptKind) => previewPrompt(worktrees, repo, kind))
   handle('guide:generate', async (repo: string, number: number) => {
     const { gh, me } = requireGh()
     const { baseSha: _baseSha, ...pull } = await getPull(gh, repo, number, me)

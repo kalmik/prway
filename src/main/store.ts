@@ -3,11 +3,13 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-import type { AiEffort, AiProviderId } from '../shared/types'
+import type { AiEffort, AiProviderId, PromptLayer } from '../shared/types'
 
 interface Settings {
   selectedRepo?: string
   ai?: { provider: AiProviderId; model: string; effort: AiEffort }
+  /** Prompt customisation: "*" for all repositories, or "owner/name". */
+  prompts?: Record<string, PromptLayer>
 }
 
 const settingsFile = () => join(app.getPath('userData'), 'settings.json')

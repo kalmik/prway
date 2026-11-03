@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AccessIssue, GhUser, PrNotification, Repo } from '../../../shared/types'
 import { errorText, timeAgo } from '../util'
-import { AiSettingsDialog } from './AiSettingsDialog'
+import { SettingsDialog, type SettingsTab } from './SettingsDialog'
 
 const api = window.prway
 
@@ -31,7 +31,12 @@ export function TopBar({ user, repo, onSelectRepo, notifications, onOpenNotifica
   const [query, setQuery] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [bellOpen, setBellOpen] = useState(false)
-  const [aiOpen, setAiOpen] = useState(false)
+  const [settings, setSettings] = useState<{ tab: SettingsTab; repo: string | null } | null>(null)
+  useEffect(() => {
+    const onOpen = (e: Event) => setSettings((e as CustomEvent<{ tab: SettingsTab; repo: string | null }>).detail)
+    window.addEventListener('prway-open-settings', onOpen)
+    return () => window.removeEventListener('prway-open-settings', onOpen)
+  }, [])
   const barRef = useRef<HTMLDivElement>(null)
 
   function loadRepos() {
@@ -173,10 +178,10 @@ export function TopBar({ user, repo, onSelectRepo, notifications, onOpenNotifica
         )}
       </div>
 
-      <button className="bell" title="AI settings" onClick={() => setAiOpen(true)}>
+      <button className="bell" title="Settings: AI and review prompts" onClick={() => setSettings({ tab: 'ai', repo })}>
         ⚙
       </button>
-      {aiOpen && <AiSettingsDialog onClose={() => setAiOpen(false)} />}
+      {settings && <SettingsDialog tab={settings.tab} repo={settings.repo} onClose={() => setSettings(null)} />}
 
       <img className="avatar" src={user.avatarUrl} alt="" title={user.login} />
       <button className="link small" onClick={onLogout}>

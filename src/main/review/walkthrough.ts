@@ -12,20 +12,23 @@ import { catFiles, git, type WorktreeManager } from '../git/worktrees'
 import { dataDir } from '../store'
 import { loadGuide } from './guide'
 import { triageHunk } from './triage'
+import { BUILT_IN, systemPrompt } from './prompts'
 import {
   buildWalkthroughPrompt,
   normalizeHunks,
   parseHunks,
   WALKTHROUGH_SCHEMA,
-  WALKTHROUGH_SYSTEM,
   type HunkWithText,
   type ModelWalkthrough
 } from './walkthroughPrompt'
 
 const EFFORT_CAP = { low: 'low', medium: 'medium', high: 'medium', xhigh: 'medium', max: 'medium' } as const
 
-function cachePath(repo: string, number: number, headSha: string, path: string): string {
-  const id = createHash('sha1').update(path).digest('hex').slice(0, 16)
+/** Saved per head commit and per set of instructions: changing a repo's prompts gives fresh walkthroughs. */
+function cachePath(repo: string, number: number, headSha: string, path: string, instructions: { system: string; hash: string }): string {
+  // Default instructions keep the original file name, so walkthroughs saved before customisation existed still count.
+  const key = instructions.system === BUILT_IN.walkthrough ? path : `${instructions.hash}:${path}`
+  const id = createHash('sha1').update(key).digest('hex').slice(0, 16)
   // "v2": behaviour-only explanations with trivial verdicts; older, wordier walkthroughs are not reused.
   return join(dataDir, 'guides', repo, `pr-${number}`, 'files-v2', headSha, `${id}.json`)
 }
@@ -95,8 +98,8 @@ export class Walkthroughs {
   }
 
   cached(repo: string, number: number, path: string): FileWalkthrough | null {
-    const { headSha } = this.worktrees.prRefs(repo, number)
-    const p = cachePath(repo, number, headSha, path)
+    const { headSha, rules } = this.worktrees.prRefs(repo, number)
+    const p = cachePath(repo, number, headSha, path, systemPrompt('walkthrough', repo, rules))
     if (!existsSync(p)) return null
     try {
       return JSON.parse(readFileSync(p, 'utf8')) as FileWalkthrough
@@ -129,8 +132,9 @@ export class Walkthroughs {
     const guide = loadGuide(repo, number, headSha)
     const context = await this.navigator.guideContext(repo, number, [file]).catch(() => '')
     const settings = getAiSettings()
+    const instructions = systemPrompt('walkthrough', repo, this.worktrees.prRefs(repo, number).rules)
     const answer = await getProvider(settings.provider).generate<ModelWalkthrough>({
-      system: WALKTHROUGH_SYSTEM,
+      system: instructions.system,
       prompt: buildWalkthroughPrompt({
         title: pull.title,
         intent: guide?.intent ?? null,
@@ -157,7 +161,7 @@ export class Walkthroughs {
       model: settings.model,
       createdAt: new Date().toISOString()
     }
-    const out = cachePath(repo, number, headSha, path)
+    const out = cachePath(repo, number, headSha, path, instructions)
     mkdirSync(dirname(out), { recursive: true })
     writeFileSync(out, JSON.stringify(walkthrough, null, 2))
     return walkthrough

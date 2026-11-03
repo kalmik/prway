@@ -11,7 +11,8 @@ import type { WorktreeManager } from '../git/worktrees'
 import type { CodeNavigator } from '../code/navigator'
 import { kbPromptText, type KnowledgeBase } from '../kb/knowledge'
 import { dataDir } from '../store'
-import { buildPrompt, GUIDE_SCHEMA, normalizeFiles, SYSTEM_PROMPT, type ModelGuide } from './guidePrompt'
+import { buildPrompt, GUIDE_SCHEMA, normalizeFiles, type ModelGuide } from './guidePrompt'
+import { systemPrompt } from './prompts'
 
 function guidePath(repo: string, number: number, headSha: string): string {
   return join(dataDir, 'guides', repo, `pr-${number}`, `${headSha}.json`)
@@ -106,8 +107,9 @@ export async function generateGuide(deps: GuideDeps, pull: PullDetail, files: Ch
   const provider = getProvider(settings.provider)
   const { review, prompt, truncatedFiles } = await prMaterial(deps, pull, files)
 
+  const instructions = systemPrompt('guide', pull.repo, deps.worktrees.rulesOrNull(pull.repo, pull.number))
   const answer = await provider.generate<ModelGuide>({
-    system: SYSTEM_PROMPT,
+    system: instructions.system,
     prompt,
     schema: GUIDE_SCHEMA as unknown as Record<string, unknown>,
     model: settings.model,
@@ -122,7 +124,8 @@ export async function generateGuide(deps: GuideDeps, pull: PullDetail, files: Ch
     provider: settings.provider,
     model: settings.model,
     createdAt: new Date().toISOString(),
-    truncatedFiles
+    truncatedFiles,
+    promptHash: instructions.hash
   }
   const p = guidePath(pull.repo, pull.number, headSha)
   mkdirSync(dirname(p), { recursive: true })
