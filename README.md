@@ -80,6 +80,10 @@ New providers can be added by implementing `AiProvider` in `src/main/ai/`.
 ~/.prway/worktrees/<owner>/<name>/pr-<n>   one checkout per PR
 ```
 
+## Docs
+
+- [docs/SPEC.md](docs/SPEC.md): product spec, market research, architecture, roadmap and key decisions
+
 ## Code map
 
 ```
