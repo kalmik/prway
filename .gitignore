@@ -1,0 +1,10 @@
+node_modules
+out
+dist
+.env
+*.log
+.env.*
+!.env.example
+*.pem
+*.key
+github-token.bin
