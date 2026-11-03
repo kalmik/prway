@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { PullSummary } from '../../../shared/types'
 import { errorText, timeAgo } from '../util'
 
-const api = window.diffscope
+const api = window.prway
 
 type Filter = 'all' | 'requested'
 

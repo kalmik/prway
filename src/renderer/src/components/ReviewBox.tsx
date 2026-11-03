@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { ReviewEvent } from '../../../shared/types'
 import { errorText } from '../util'
 
-const api = window.diffscope
+const api = window.prway
 
 export function ReviewBox({ repo, number }: { repo: string; number: number }) {
   const [body, setBody] = useState('')

@@ -5,7 +5,7 @@
 import type { DeviceCode } from '../../shared/types'
 
 export const CLIENT_ID: string =
-  import.meta.env.MAIN_VITE_GITHUB_CLIENT_ID || process.env.DIFFSCOPE_GITHUB_CLIENT_ID || ''
+  import.meta.env.MAIN_VITE_GITHUB_CLIENT_ID || process.env.PRWAY_GITHUB_CLIENT_ID || ''
 
 // repo: read private repos and PRs, submit reviews. notifications: relay GitHub notifications.
 const SCOPES = 'repo read:org notifications'

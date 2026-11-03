@@ -1,5 +1,5 @@
 {
-  "name": "diffscope",
+  "name": "prway",
   "version": "0.1.0",
   "private": true,
   "description": "Desktop app focused on human code review of GitHub pull requests",

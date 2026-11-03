@@ -5,7 +5,7 @@ import { PrList } from './components/PrList'
 import { PrView } from './components/PrView'
 import { TopBar } from './components/TopBar'
 
-const api = window.diffscope
+const api = window.prway
 
 export function App() {
   const [auth, setAuth] = useState<AuthState | null>(null)
@@ -58,7 +58,7 @@ export function App() {
         }}
       />
       {!auth.tokenPersisted && (
-        <div className="banner">No system keyring found: you will need to sign in again next time you open Diffscope.</div>
+        <div className="banner">No system keyring found: you will need to sign in again next time you open PRway.</div>
       )}
       <div className="workspace">
         <aside className="sidebar">

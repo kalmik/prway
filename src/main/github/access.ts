@@ -1,7 +1,7 @@
 // Explains why an organization's repositories are missing from the list.
 // GitHub hides them without an error in three common cases:
 //   - the org uses SAML SSO and the token is not authorized for it (X-GitHub-SSO header)
-//   - the org restricts OAuth apps and has not approved Diffscope yet (403 on org endpoints)
+//   - the org restricts OAuth apps and has not approved PRway yet (403 on org endpoints)
 //   - the token is fine-grained (covers one owner only) or lacks the needed scopes
 
 import type { AccessIssue } from '../../shared/types'
@@ -9,7 +9,7 @@ import { GitHubError, type GitHub } from './api'
 import { CLIENT_ID } from './auth'
 
 const NEEDED_SCOPES = ['repo', 'read:org', 'notifications']
-const NEW_TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=repo,read:org,notifications&description=Diffscope'
+const NEW_TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=repo,read:org,notifications&description=PRway'
 const TOKENS_URL = 'https://github.com/settings/tokens'
 
 type TokenKind = 'classic' | 'fine-grained' | 'oauth' | 'other'
@@ -41,7 +41,7 @@ function ssoIssue(org: string, kind: TokenKind): AccessIssue {
     return {
       kind: 'sso',
       org,
-      message: `${org} uses SAML single sign-on. Start an SSO session for it, then sign out and sign in to Diffscope again.`,
+      message: `${org} uses SAML single sign-on. Start an SSO session for it, then sign out and sign in to PRway again.`,
       actionLabel: 'Start SSO session',
       actionUrl: isOrgName ? `https://github.com/orgs/${org}/sso` : TOKENS_URL
     }
@@ -111,7 +111,7 @@ export async function diagnoseAccess(gh: GitHub, ssoHeaders: (string | null)[]):
             return {
               kind: 'oauth-restricted',
               org,
-              message: `${org} restricts third-party apps and has not approved Diffscope yet. Request access, then an org owner approves it once for everyone.`,
+              message: `${org} restricts third-party apps and has not approved PRway yet. Request access, then an org owner approves it once for everyone.`,
               actionLabel: 'Request access',
               actionUrl: CLIENT_ID
                 ? `https://github.com/settings/connections/applications/${CLIENT_ID}`

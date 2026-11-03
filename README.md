@@ -1,10 +1,7 @@
-# Diffscope
+# PRway
 
 A desktop app for **human** code review of GitHub pull requests: the review is the main view,
 every PR gets its own git worktree, and GitHub notifications for your PRs show up on your desktop.
-
-> Name note: an open-source CLI called "diffscope" already exists (a Rust AI review engine).
-> Check for conflicts before publishing under this name.
 
 ## Run it
 
@@ -34,7 +31,7 @@ The token is encrypted with your system keyring (Electron `safeStorage`). The UI
 ## What works (milestone 1)
 
 - Sign in with GitHub, pick a repository, list its open PRs ("For me" = your review is requested).
-- Open a PR: Diffscope fetches it into its own **git worktree** and shows every changed file in a side-by-side
+- Open a PR: PRway fetches it into its own **git worktree** and shows every changed file in a side-by-side
   diff (Monaco, the VS Code editor). Unchanged regions are folded, and you can hide whitespace-only changes.
 - Mark files as **viewed**. Progress is saved per PR head commit, so new commits reset it.
 - Submit a review: comment, approve or request changes.
@@ -65,7 +62,7 @@ the diffs of the non-noise files, and returns:
 - a **reading order** with a risk level per file, and **focus lines** highlighted in the diff
 - questions to ask the author
 
-Guides are saved per head commit in `~/.diffscope/guides/`, and you can regenerate after new commits.
+Guides are saved per head commit in `~/.prway/guides/`, and you can regenerate after new commits.
 
 **Choosing the AI (⚙ in the top bar):**
 
@@ -79,8 +76,8 @@ New providers can be added by implementing `AiProvider` in `src/main/ai/`.
 ## Where things live
 
 ```
-~/.diffscope/repos/<owner>/<name>.git          bare, partial clone (file contents download on demand)
-~/.diffscope/worktrees/<owner>/<name>/pr-<n>   one checkout per PR
+~/.prway/repos/<owner>/<name>.git          bare, partial clone (file contents download on demand)
+~/.prway/worktrees/<owner>/<name>/pr-<n>   one checkout per PR
 ```
 
 ## Code map
@@ -91,7 +88,7 @@ src/main/index.ts            Electron main process: window, IPC handlers, deskto
 src/main/github/             GitHub REST client, device-flow login, PRs, notification poller
 src/main/git/worktrees.ts    clone / fetch / worktree / file contents per PR
 src/main/store.ts            settings + encrypted token
-src/preload/index.ts         exposes window.diffscope to the UI (no Node access in the UI)
+src/preload/index.ts         exposes window.prway to the UI (no Node access in the UI)
 src/renderer/src/            React UI (App, TopBar, PrList, PrView, ReviewBox)
 ```
 

@@ -3,7 +3,7 @@ import type { AccessIssue, GhUser, PrNotification, Repo } from '../../../shared/
 import { errorText, timeAgo } from '../util'
 import { AiSettingsDialog } from './AiSettingsDialog'
 
-const api = window.diffscope
+const api = window.prway
 
 interface Props {
   user: GhUser
@@ -75,7 +75,7 @@ export function TopBar({ user, repo, onSelectRepo, notifications, onOpenNotifica
 
   return (
     <header className="topbar" ref={barRef}>
-      <span className="brand">Diffscope</span>
+      <span className="brand">PRway</span>
 
       <div className="dropdown">
         <button className="repo-button" onClick={() => setPickerOpen((o) => !o)}>

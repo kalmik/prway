@@ -109,7 +109,7 @@ export interface ReviewGuide {
   /** Reviewable files in the suggested reading order. */
   files: GuideFile[]
   questions: string[]
-  // Filled in by Diffscope, not by the model:
+  // Filled in by PRway, not by the model:
   headSha: string
   provider: AiProviderId
   model: string
@@ -168,8 +168,8 @@ export interface OpenPrRequest {
   number: number
 }
 
-/** The API the preload script exposes to the UI as `window.diffscope`. */
-export interface DiffscopeApi {
+/** The API the preload script exposes to the UI as `window.prway`. */
+export interface PrwayApi {
   auth: {
     state(): Promise<AuthState>
     startDeviceFlow(): Promise<DeviceCode>

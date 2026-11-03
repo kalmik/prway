@@ -1,8 +1,8 @@
-// Runs before the UI loads. Exposes a small, typed API as `window.diffscope`.
+// Runs before the UI loads. Exposes a small, typed API as `window.prway`.
 // The UI never gets direct access to Node, git or the GitHub token.
 
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { DiffscopeApi, OpenPrRequest, PrNotification } from '../shared/types'
+import type { PrwayApi, OpenPrRequest, PrNotification } from '../shared/types'
 
 const call =
   (channel: string) =>
@@ -15,7 +15,7 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
   return () => ipcRenderer.removeListener(channel, listener)
 }
 
-const api: DiffscopeApi = {
+const api: PrwayApi = {
   auth: {
     state: call('auth:state'),
     startDeviceFlow: call('auth:startDeviceFlow'),
@@ -58,4 +58,4 @@ const api: DiffscopeApi = {
   onOpenPr: (cb) => subscribe<OpenPrRequest>('open-pr', cb)
 }
 
-contextBridge.exposeInMainWorld('diffscope', api)
+contextBridge.exposeInMainWorld('prway', api)

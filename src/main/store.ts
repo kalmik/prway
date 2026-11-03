@@ -13,8 +13,8 @@ interface Settings {
 const settingsFile = () => join(app.getPath('userData'), 'settings.json')
 const secretFile = (name: string) => join(app.getPath('userData'), `${name}.bin`)
 
-/** Where Diffscope keeps its clones and PR worktrees. Visible on purpose, so you can open them in an IDE. */
-export const dataDir = join(homedir(), '.diffscope')
+/** Where PRway keeps its clones and PR worktrees. Visible on purpose, so you can open them in an IDE. */
+export const dataDir = join(homedir(), '.prway')
 
 export function loadSettings(): Settings {
   try {

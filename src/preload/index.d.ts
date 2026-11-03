@@ -1,8 +1,8 @@
-import type { DiffscopeApi } from '../shared/types'
+import type { PrwayApi } from '../shared/types'
 
 declare global {
   interface Window {
-    diffscope: DiffscopeApi
+    prway: PrwayApi
   }
 }
 

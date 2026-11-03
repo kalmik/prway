@@ -1,11 +1,11 @@
 // One git worktree per pull request, so several PRs can be reviewed at once
 // without switching branches.
 //
-// Layout under ~/.diffscope:
+// Layout under ~/.prway:
 //   repos/<owner>/<name>.git          bare, partial clone (file contents are downloaded on demand)
 //   worktrees/<owner>/<name>/pr-<n>   checkout of the PR head, open it in any IDE
 //
-// PR refs are fetched into refs/diffscope/* so they never clash with real branches.
+// PR refs are fetched into refs/prway/* so they never clash with real branches.
 
 import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
@@ -93,8 +93,8 @@ export class WorktreeManager {
   prepare(repo: string, number: number, baseRef: string): Promise<WorktreeInfo> {
     return this.withLock(repo, async () => {
       const dir = await this.ensureClone(repo)
-      const prRef = `refs/diffscope/pr/${number}`
-      const baseLocal = `refs/diffscope/base/${baseRef}`
+      const prRef = `refs/prway/pr/${number}`
+      const baseLocal = `refs/prway/base/${baseRef}`
 
       await git(
         ['fetch', '--force', '--no-tags', 'origin', `+refs/pull/${number}/head:${prRef}`, `+refs/heads/${baseRef}:${baseLocal}`],

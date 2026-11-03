@@ -7,7 +7,7 @@ import { FileList } from './FileList'
 import { GuidePanel } from './GuidePanel'
 import { ReviewBox } from './ReviewBox'
 
-const api = window.diffscope
+const api = window.prway
 
 type DiffEditorInstance = Parameters<DiffOnMount>[0]
 

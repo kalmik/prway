@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { AuthState, DeviceCode } from '../../../shared/types'
 import { errorText } from '../util'
 
-const api = window.diffscope
+const api = window.prway
 
 export function Login({ state, onSignedIn }: { state: AuthState; onSignedIn: (s: AuthState) => void }) {
   const [code, setCode] = useState<DeviceCode | null>(null)
@@ -42,7 +42,7 @@ export function Login({ state, onSignedIn }: { state: AuthState; onSignedIn: (s:
   return (
     <div className="center">
       <div className="card login">
-        <h1>Diffscope</h1>
+        <h1>PRway</h1>
         <p className="muted">Code review that focuses on what changed and why.</p>
 
         {state.deviceFlowAvailable && !code && (
@@ -94,7 +94,7 @@ export function Login({ state, onSignedIn }: { state: AuthState; onSignedIn: (s:
               className="link small"
               onClick={() =>
                 api.openExternal(
-                  'https://github.com/settings/tokens/new?scopes=repo,read:org,notifications&description=Diffscope'
+                  'https://github.com/settings/tokens/new?scopes=repo,read:org,notifications&description=PRway'
                 )
               }
             >

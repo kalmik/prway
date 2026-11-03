@@ -1,4 +1,4 @@
-// A small GitHub REST client built on fetch. Enough for Diffscope's needs, no extra dependency.
+// A small GitHub REST client built on fetch. Enough for PRway's needs, no extra dependency.
 
 const API = 'https://api.github.com'
 

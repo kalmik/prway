@@ -2,7 +2,7 @@ import type { GhUser, PullDetail, PullSummary, RepoListing, ReviewEvent } from '
 import { diagnoseAccess } from './access'
 import type { GitHub } from './api'
 
-// Only the fields Diffscope uses from GitHub's REST responses.
+// Only the fields PRway uses from GitHub's REST responses.
 interface RawUser {
   login: string
   avatar_url: string

@@ -83,7 +83,7 @@ function startPoller(): void {
         // On startup, one summary instead of a burst of notifications.
         const requests = fresh.filter((n) => n.reason === 'review_requested').length
         if (requests && Notification.isSupported()) {
-          new Notification({ title: 'Diffscope', body: `${requests} pull request(s) waiting for your review` }).show()
+          new Notification({ title: 'PRway', body: `${requests} pull request(s) waiting for your review` }).show()
         }
         return
       }
@@ -93,7 +93,7 @@ function startPoller(): void {
   poller.start()
 }
 
-// ---- IPC: every function the UI can call (see DiffscopeApi in shared/types.ts) ----
+// ---- IPC: every function the UI can call (see PrwayApi in shared/types.ts) ----
 
 function registerIpc(): void {
   const handle = <A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>) =>
@@ -180,7 +180,7 @@ function createWindow(): void {
     height: 900,
     minWidth: 1100,
     minHeight: 600,
-    title: 'Diffscope',
+    title: 'PRway',
     show: false,
     autoHideMenuBar: true,
     webPreferences: {

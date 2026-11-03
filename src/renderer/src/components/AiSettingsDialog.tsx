@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AiEffort, AiProviderId, AiSettings, AiStatus } from '../../../shared/types'
 import { errorText } from '../util'
 
-const api = window.diffscope
+const api = window.prway
 
 const MODELS = [
   { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 (recommended)' },
@@ -50,7 +50,7 @@ export function AiSettingsDialog({ onClose }: { onClose: () => void }) {
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="card dialog">
         <h3>AI settings</h3>
-        <p className="small muted">Used for the review guide. Diffscope only sends the PR (description, commits, diff).</p>
+        <p className="small muted">Used for the review guide. PRway only sends the PR (description, commits, diff).</p>
 
         <fieldset>
           <legend className="small muted">Provider</legend>

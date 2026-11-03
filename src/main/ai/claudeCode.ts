@@ -19,7 +19,7 @@ interface CliResult {
 export class ClaudeCodeProvider implements AiProvider {
   readonly id = 'claude-code' as const
 
-  constructor(private command = process.env.DIFFSCOPE_CLAUDE_BIN || 'claude') {}
+  constructor(private command = process.env.PRWAY_CLAUDE_BIN || 'claude') {}
 
   generate<T>(req: StructuredRequest): Promise<T> {
     const args = [
@@ -37,7 +37,7 @@ export class ClaudeCodeProvider implements AiProvider {
     mkdirSync(dataDir, { recursive: true })
 
     return new Promise<T>((resolve, reject) => {
-      // Run from Diffscope's data folder so no project CLAUDE.md is picked up.
+      // Run from PRway's data folder so no project CLAUDE.md is picked up.
       const child = spawn(this.command, args, { cwd: dataDir, env: process.env, stdio: ['pipe', 'pipe', 'pipe'] })
       let stdout = ''
       let stderr = ''
