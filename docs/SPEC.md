@@ -175,6 +175,8 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 - **macOS:** expected to work, not tested yet. `safeStorage` uses the Keychain, and the git from Xcode Command Line Tools is enough.
   - Known issue: an app opened from Finder or the Dock doesn't get your shell's `PATH`, so `claude` may not be found.
   - Workaround: `PRWAY_CLAUDE_BIN=/path/to/claude`.
+- **Claude Code account:** reviews use whatever `CLAUDE_CONFIG_DIR` PRway was started with. Set
+  `PRWAY_CLAUDE_CONFIG_DIR` to use a different account for reviews only (`~/.claude` = the default account).
   - Fix planned: also search the usual install folders (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`).
 - **Windows:** not tried.
 

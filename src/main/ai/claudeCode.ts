@@ -4,6 +4,8 @@
 
 import { spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { dataDir } from '../store'
 import type { AiProvider, StructuredRequest } from './provider'
 
@@ -14,6 +16,21 @@ interface CliResult {
   subtype?: string
   result?: string
   structured_output?: unknown
+}
+
+/**
+ * Picks the Claude Code account for reviews. By default `claude` inherits CLAUDE_CONFIG_DIR from
+ * PRway's own environment. PRWAY_CLAUDE_CONFIG_DIR overrides it for reviews only; set it to
+ * ~/.claude for the default account (the variable is then removed, as Claude Code expects).
+ */
+function claudeEnv(): NodeJS.ProcessEnv {
+  const override = process.env.PRWAY_CLAUDE_CONFIG_DIR
+  if (!override) return process.env
+  const env = { ...process.env }
+  const dir = resolve(override.replace(/^~(?=$|\/)/, homedir()))
+  if (dir === join(homedir(), '.claude')) delete env.CLAUDE_CONFIG_DIR
+  else env.CLAUDE_CONFIG_DIR = dir
+  return env
 }
 
 export class ClaudeCodeProvider implements AiProvider {
@@ -38,7 +55,7 @@ export class ClaudeCodeProvider implements AiProvider {
 
     return new Promise<T>((resolve, reject) => {
       // Run from PRway's data folder so no project CLAUDE.md is picked up.
-      const child = spawn(this.command, args, { cwd: dataDir, env: process.env, stdio: ['pipe', 'pipe', 'pipe'] })
+      const child = spawn(this.command, args, { cwd: dataDir, env: claudeEnv(), stdio: ['pipe', 'pipe', 'pipe'] })
       let stdout = ''
       let stderr = ''
       const timer = setTimeout(() => {
