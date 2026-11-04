@@ -138,9 +138,21 @@ export async function generateGuide(deps: GuideDeps, pull: PullDetail, files: Ch
     effort: settings.effort
   })
   const ordered = normalizeFiles(answer.files, review)
+  // Seeds must be in the files under review, and their names bare (no module, no arity).
+  const reviewPaths = new Set(review.map((f) => f.path))
+  const concepts = (answer.concepts ?? [])
+    .map((c) => ({
+      ...c,
+      seeds: c.seeds
+        .filter((s) => reviewPaths.has(s.path))
+        .map((s) => ({ path: s.path, name: s.name.replace(/\/\d+$/, '').split(/[.#]/).pop()!.replace(/\(.*$/, '').trim() }))
+        .filter((s) => s.name)
+    }))
+    .filter((c) => c.seeds.length)
 
   const guide: ReviewGuide = {
     ...answer,
+    concepts,
     files: ordered,
     headSha,
     provider: settings.provider,

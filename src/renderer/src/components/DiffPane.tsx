@@ -2,10 +2,11 @@
 // moved-code marks, inline review comments and code navigation.
 
 import { DiffEditor } from '@monaco-editor/react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangedFile, DiffSide, DraftComment, FileDiff, GuideFile, Hunk, HunkAuto, ReviewThread, WorktreeInfo } from '../../../shared/types'
 import { languageFor, monaco, MONO_FONT } from '../monaco'
-import { attachCodeNav, type NavHandlers } from './codeNav'
+import { attachCodeNav, linesRef, type NavHandlers } from './codeNav'
+import { attachLineMenu, copyReference, LineMenu, type LineMenuAt } from './LineMenu'
 import { LineComments, useViewZones, type CommentActions, type ZoneSpec } from './Comments'
 import { Markdown } from './Markdown'
 import { AUTO_LABEL, hunkAnchor, hunkRange } from './ReviewPanel'
@@ -114,6 +115,8 @@ export function DiffPane(props: Props) {
   const [modified, setModified] = useState<CodeEditor | null>(null)
   const [original, setOriginal] = useState<CodeEditor | null>(null)
   const [composing, setComposing] = useState<Composing | null>(null)
+  const [lineMenu, setLineMenu] = useState<(LineMenuAt & { side: DiffSide }) | null>(null)
+  const closeLineMenu = useCallback(() => setLineMenu(null), [])
   const diffEditorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null)
   // Handlers change on every render; editors keep a stable callback that reads the latest ones.
   const latest = useRef(props)
@@ -127,7 +130,7 @@ export function DiffPane(props: Props) {
   )
   const language = useMemo(() => languageFor(file.path), [file.path])
 
-  // ---- Gutter: click a line to comment (a multi-line selection makes a range comment) ----
+  // ---- Gutter: click a line number (or drag over several) for the line menu: comment, ask in chat… ----
   useEffect(() => {
     const sides: [CodeEditor | null, DiffSide][] = [
       [modified, 'RIGHT'],
@@ -138,6 +141,7 @@ export function DiffPane(props: Props) {
       if (!ed) continue
       const hover = ed.createDecorationsCollection()
       disposables.push(
+        attachLineMenu(ed, (at) => setLineMenu({ ...at, side })),
         ed.onMouseDown((e) => {
           const T = monaco.editor.MouseTargetType
           if ((e.target.type === T.CONTENT_TEXT || e.target.type === T.CONTENT_EMPTY) && e.target.position) {
@@ -148,17 +152,7 @@ export function DiffPane(props: Props) {
               return (span.side === side || !sideBySideRef.current) && line >= span.start && line <= span.end
             })
             if (mark && !mark.current) latest.current.onSelectHunk?.(mark.hunk)
-            return
           }
-          if (!GUTTER.has(e.target.type) || !e.target.position) return
-          const line = e.target.position.lineNumber
-          if (!commentable[side].has(line)) return
-          const sel = ed.getSelection()
-          const startLine =
-            sel && sel.startLineNumber < sel.endLineNumber && sel.endLineNumber === line && commentable[side].has(sel.startLineNumber)
-              ? sel.startLineNumber
-              : undefined
-          setComposing({ side, line, startLine })
         }),
         ed.onMouseMove((e) => {
           const line = e.target.position?.lineNumber
@@ -172,6 +166,30 @@ export function DiffPane(props: Props) {
     }
     return () => disposables.forEach((d) => d.dispose())
   }, [modified, original, commentable])
+  useEffect(() => setLineMenu(null), [file.path])
+
+  function lineMenuItems(m: LineMenuAt & { side: DiffSide }) {
+    const ed = m.side === 'LEFT' ? original : modified
+    const path = m.side === 'LEFT' ? (file.oldPath ?? file.path) : file.path
+    const canComment = commentable[m.side].has(m.end)
+    return [
+      {
+        label: m.start === m.end ? 'Comment on this line' : 'Comment on these lines',
+        disabledReason: canComment ? undefined : 'GitHub only takes comments on lines in the diff (changed lines and the few around them)',
+        run: () =>
+          setComposing({ side: m.side, line: m.end, startLine: m.start < m.end && commentable[m.side].has(m.start) ? m.start : undefined })
+      },
+      {
+        label: 'Ask in Chat',
+        hint: '⌘L',
+        run: () => {
+          const ref = ed && linesRef(ed, m.start, m.end)
+          if (ref) latest.current.nav.onAskChat?.(ref)
+        }
+      },
+      { label: 'Copy reference', run: () => copyReference(path, m.start, m.end) }
+    ]
+  }
 
   // ---- Keep Monaco's inner container from being scrolled by the browser ----
   // Typing in a comment box inside the diff makes the browser scroll its container to show the caret; Monaco
@@ -415,6 +433,7 @@ export function DiffPane(props: Props) {
 
   return (
     <div className="diff-pane">
+      {lineMenu && <LineMenu at={lineMenu} items={lineMenuItems(lineMenu)} onClose={closeLineMenu} />}
       {(detached.length > 0 || detachedDrafts.length > 0) && (
         <div className="detached small">
           {detached.length > 0 && (

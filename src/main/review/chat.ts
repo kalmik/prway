@@ -11,10 +11,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ChangedFile, ChatMessage, PullDetail, ReviewGuide } from '../../shared/types'
+import type { ChangedFile, ChatCodeRef, ChatMessage, PullDetail, ReviewGuide } from '../../shared/types'
 import { getAiSettings, getProvider } from '../ai/provider'
 import { dataDir } from '../store'
 import { prMaterial, type GuideDeps } from './guide'
+import { briefingPromptText, loadBriefing } from '../trace/briefing'
 import { systemPrompt } from './prompts'
 
 const MAX_TURNS = 20
@@ -54,11 +55,26 @@ function saveSession(key: string, session: ChatSession | null): void {
 }
 
 const hash = (text: string) => createHash('sha1').update(text).digest('hex').slice(0, 16)
-const conversationHash = (messages: ChatMessage[]) => hash(messages.map((m) => `${m.role}:${m.text}`).join('\u0000'))
+
+/** Code the reviewer attached, with line numbers, so the model knows exactly which lines are meant. */
+function refBlock(r: ChatCodeRef): string {
+  const version = r.side === 'base' ? 'before this PR (base)' : "in this PR's version (head)"
+  const numbered = r.code
+    .split('\n')
+    .map((line, i) => `${r.startLine + i}| ${line}`)
+    .join('\n')
+  const where = r.startLine === r.endLine ? `line ${r.startLine}` : `lines ${r.startLine}-${r.endLine}`
+  return `[The reviewer points at ${r.path} ${where}, ${version}:]\n\`\`\`\n${numbered}\n\`\`\``
+}
+
+/** A message as the model sees it: attached code first, then the text. */
+const messageText = (m: ChatMessage) => [...(m.refs ?? []).map(refBlock), m.text].join('\n')
+
+const conversationHash = (messages: ChatMessage[]) => hash(messages.map((m) => `${m.role}:${messageText(m)}`).join('\u0000'))
 const transcript = (messages: ChatMessage[]) =>
   messages
     .slice(-MAX_TURNS)
-    .map((m) => `${m.role === 'user' ? 'REVIEWER' : 'YOU'}: ${m.text}`)
+    .map((m) => `${m.role === 'user' ? 'REVIEWER' : 'YOU'}: ${messageText(m)}`)
     .join('\n\n')
 
 export async function chat(
@@ -76,9 +92,12 @@ export async function chat(
   const guideText = guide
     ? `\nREVIEW GUIDE (made earlier by AI):\n${JSON.stringify({ intent: guide.intent, businessRules: guide.businessRules, mismatches: guide.mismatches, files: guide.files, questions: guide.questions })}`
     : ''
+  const head = deps.worktrees.headSha(pull.repo, pull.number)
+  const background = briefingPromptText(head ? loadBriefing(pull.repo, pull.number, head) : null)
+  const briefingText = background ? `\nBACKGROUND (how the changed code worked before this PR, traced by PRway):\n${background}` : ''
   const system = systemPrompt('chat', pull.repo, deps.worktrees.rulesOrNull(pull.repo, pull.number)).system
   // The stable part: the same for every question about this PR (until new commits or a new guide).
-  const prefix = `${prompt}${guideText}\n\n`
+  const prefix = `${prompt}${guideText}${briefingText}\n\n`
   const base = {
     system,
     schema: CHAT_SCHEMA,
@@ -109,7 +128,7 @@ export async function chat(
       prefix,
       session: { id, resume },
       prompt: resume
-        ? `REVIEWER: ${last.text}\n\n(Answer this new question about the same pull request.)`
+        ? `REVIEWER: ${messageText(last)}\n\n(Answer this new question about the same pull request.)`
         : `CONVERSATION SO FAR (answer the last REVIEWER message):\n${transcript(messages)}`
     })
 

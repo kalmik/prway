@@ -2,11 +2,13 @@
 // editor tabs, read-only files with the PR's changed lines marked in the gutter, and go to definition.
 
 import { Editor } from '@monaco-editor/react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangedFile } from '../../../shared/types'
 import { languageFor, monaco, MONO_FONT } from '../monaco'
 import { errorText, useStored } from '../util'
-import { attachCodeNav, type NavHandlers } from './codeNav'
+import { buildTree, compact, type Dir } from '../fileTree'
+import { attachCodeNav, linesRef, type NavHandlers } from './codeNav'
+import { attachLineMenu, copyReference, LineMenu, type LineMenuAt } from './LineMenu'
 
 const api = window.prway
 
@@ -32,50 +34,6 @@ interface Props {
   onViewDiff: (path: string, line: number | null) => void
   /** Set when a link from the review opened the code view: returns to where you were. */
   onBack?: () => void
-}
-
-interface Dir {
-  name: string
-  path: string
-  dirs: Dir[]
-  files: string[]
-}
-
-function buildTree(paths: string[]): Dir {
-  const root: Dir = { name: '', path: '', dirs: [], files: [] }
-  const index = new Map<string, Dir>([['', root]])
-  for (const p of paths) {
-    const parts = p.split('/')
-    let cur = root
-    for (let i = 0; i < parts.length - 1; i++) {
-      const path = parts.slice(0, i + 1).join('/')
-      let next = index.get(path)
-      if (!next) {
-        next = { name: parts[i], path, dirs: [], files: [] }
-        index.set(path, next)
-        cur.dirs.push(next)
-      }
-      cur = next
-    }
-    cur.files.push(p)
-  }
-  const sort = (d: Dir) => {
-    d.dirs.sort((a, b) => a.name.localeCompare(b.name))
-    d.files.sort((a, b) => a.localeCompare(b))
-    d.dirs.forEach(sort)
-  }
-  sort(root)
-  return root
-}
-
-/** Folders with a single folder inside are shown as one row ("src/main"), like most IDEs. */
-function compact(d: Dir): Dir {
-  let cur = d
-  while (cur.files.length === 0 && cur.dirs.length === 1) {
-    const child = cur.dirs[0]
-    cur = { ...child, name: `${cur.name}/${child.name}` }
-  }
-  return cur
 }
 
 /** Greedy subsequence match of `q` in `text`: a score (consecutive characters count more), or null. */
@@ -369,6 +327,7 @@ export function CodeBrowser({ repo, number, headSha, changed, dark, nav, request
               line={pendingLine?.path === active ? pendingLine : null}
               dark={dark}
               nav={nav}
+              onViewDiff={activeChange ? (l) => onViewDiff(active, l) : undefined}
             />
           </>
         ) : (
@@ -394,7 +353,8 @@ function CodeEditor({
   changed,
   line,
   dark,
-  nav
+  nav,
+  onViewDiff
 }: {
   repo: string
   number: number
@@ -404,6 +364,8 @@ function CodeEditor({
   line: { line: number; seq: number } | null
   dark: boolean
   nav: NavHandlers
+  /** For files the PR changed: opens the diff at a line. */
+  onViewDiff?: (line: number) => void
 }) {
   const texts = useRef(new Map<string, { text: string; changedLines: number[] } | { note: string }>())
   const [, setLoaded] = useState(0)
@@ -442,9 +404,13 @@ function CodeEditor({
 
   useEffect(() => {
     if (!editor) return
-    const d = attachCodeNav(editor, () => navRef.current)
-    return () => d.dispose()
+    const ds = [attachCodeNav(editor, () => navRef.current), attachLineMenu(editor, setLineMenu)]
+    return () => ds.forEach((d) => d.dispose())
   }, [editor])
+
+  const [lineMenu, setLineMenu] = useState<LineMenuAt | null>(null)
+  const closeLineMenu = useCallback(() => setLineMenu(null), [])
+  useEffect(() => setLineMenu(null), [key])
 
   const entry = texts.current.get(key)
   const ready = entry && 'text' in entry ? entry : null
@@ -509,8 +475,33 @@ function CodeEditor({
     return () => cancelAnimationFrame(id)
   }, [editor, ready, line?.seq])
 
+  function lineMenuItems(m: LineMenuAt) {
+    const changedHere = ready?.changedLines.find((l) => l >= m.start && l <= m.end)
+    return [
+      {
+        label: 'Ask in Chat',
+        hint: '⌘L',
+        run: () => {
+          const ref = editor && linesRef(editor, m.start, m.end)
+          if (ref) navRef.current.onAskChat?.(ref)
+        }
+      },
+      ...(onViewDiff
+        ? [
+            {
+              label: 'View diff',
+              disabledReason: changedHere ? undefined : 'These lines are not changed in this PR',
+              run: () => onViewDiff(changedHere ?? m.start)
+            }
+          ]
+        : []),
+      { label: 'Copy reference', run: () => copyReference(path, m.start, m.end) }
+    ]
+  }
+
   return (
     <div className="editor-area">
+      {lineMenu && <LineMenu at={lineMenu} items={lineMenuItems(lineMenu)} onClose={closeLineMenu} />}
       {entry && 'note' in entry && <div className="center muted">{entry.note}</div>}
       {!entry && <div className="center muted">Loading {path}…</div>}
       {/* Kept mounted while another file loads, so switching tabs doesn't rebuild the editor. */}

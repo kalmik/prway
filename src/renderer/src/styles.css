@@ -492,6 +492,44 @@ ul {
   align-items: center;
   padding-left: 8px;
 }
+.files li.dir-row .file {
+  align-items: center;
+  gap: 4px;
+}
+.dir-name {
+  color: var(--muted);
+  flex: 1 1 auto;
+}
+.dir-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--muted);
+  padding-left: 6px;
+}
+.dir-count.done {
+  color: var(--add);
+}
+.file-tree .tree-twisty {
+  font-size: 11px;
+}
+.files-header .seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.files-header .seg button {
+  border: none;
+  border-radius: 0;
+  background: none;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.files-header .seg button.on {
+  background: var(--bg-active);
+  color: var(--text);
+}
 .files li.active {
   background: var(--bg-active);
 }
@@ -1174,6 +1212,137 @@ button.link.danger {
   margin-top: 4px;
 }
 
+/* ---- Background panel ---- */
+.bg-head {
+  margin-bottom: 6px;
+}
+.bg-concept {
+  border-top: 1px solid var(--border);
+  padding: 10px 0 6px;
+}
+.bg-concept h3 {
+  margin: 0 0 2px;
+  font-size: 14px;
+}
+.bg-question {
+  margin: 0 0 6px;
+}
+.bg-change {
+  margin: 6px 0;
+}
+.bg-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-right: 6px;
+}
+.bg-claims {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+.bg-claims li {
+  margin: 2px 0;
+}
+.bg-watch {
+  border-left: 3px solid var(--risk-medium);
+  padding-left: 10px;
+  margin: 8px 0;
+}
+.bg-cite {
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 5px;
+  margin: 0 2px;
+  background: var(--bg-soft);
+  color: var(--accent);
+  cursor: pointer;
+}
+.bg-cite:hover {
+  background: var(--bg-hover);
+}
+.bg-trace {
+  margin-top: 8px;
+}
+.bg-trace > ul {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+}
+.bg-node {
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--border);
+}
+.bg-node .row {
+  gap: 8px;
+}
+.bg-role {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  min-width: 78px;
+}
+.bg-node.role-seed .bg-role {
+  color: var(--accent);
+  font-weight: 600;
+}
+.bg-node.role-entry .bg-role {
+  color: var(--hot);
+}
+.bg-node .mono {
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 12px;
+}
+.bg-state.changed {
+  border-color: var(--risk-medium);
+  color: var(--risk-medium);
+}
+.bg-state.new {
+  border-color: var(--add);
+  color: var(--add);
+}
+.bg-state.removed {
+  border-color: var(--del);
+  color: var(--del);
+}
+.bg-card,
+.bg-tests,
+.bg-edit {
+  margin: 3px 0 0 86px;
+}
+.bg-card ul,
+.bg-tests {
+  margin: 2px 0;
+  padding-left: 16px;
+}
+.bg-card .tag {
+  margin-left: 0;
+}
+.bg-edit label {
+  display: block;
+  margin-bottom: 6px;
+}
+.bg-edit textarea {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  box-sizing: border-box;
+}
+.bg-edit .row {
+  gap: 6px;
+}
+.bg-kb {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.bg-kb .panel-body {
+  padding: 6px 0 0;
+}
+
 /* ---- Chat ---- */
 .chat-bar {
   display: flex;
@@ -1182,6 +1351,47 @@ button.link.danger {
   padding: 8px;
   border-top: 1px solid var(--border);
   background: var(--bg-soft);
+}
+.chat-input {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.chat-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.msg.user .chat-refs {
+  margin-bottom: 4px;
+}
+.chat-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 4px 1px 7px;
+  background: var(--bg);
+}
+.chat-ref .link {
+  font: inherit;
+}
+.chat-ref-remove {
+  border: none;
+  background: none;
+  padding: 0 3px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+.chat-ref-remove:hover {
+  color: var(--text);
 }
 .chat-bar textarea {
   flex: 1;
@@ -2247,4 +2457,52 @@ textarea.mono {
 .code-empty {
   flex-direction: column;
   text-align: center;
+}
+
+/* ---- Line menu (click a line number) ---- */
+.line-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+}
+.line-menu-title {
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.line-menu button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  border: none;
+  background: none;
+  border-radius: 5px;
+  padding: 5px 8px;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+}
+.line-menu button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.line-menu button:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.6;
+}
+.line-menu kbd {
+  font-size: 11px;
+  color: var(--muted);
+}
+.monaco-editor .margin-view-overlays .line-numbers {
+  cursor: pointer !important;
 }

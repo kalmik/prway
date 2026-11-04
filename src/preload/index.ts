@@ -66,6 +66,11 @@ const api: PrwayApi = {
   chat: {
     send: call('chat:send')
   },
+  briefing: {
+    get: call('briefing:get'),
+    generate: call('briefing:generate'),
+    saveCard: call('briefing:saveCard')
+  },
   kb: {
     related: call('kb:related'),
     sync: call('kb:sync'),
@@ -96,7 +101,8 @@ const api: PrwayApi = {
   },
   openExternal: call('openExternal'),
   onNotifications: (cb) => subscribe<PrNotification[]>('notifications', cb),
-  onOpenPr: (cb) => subscribe<OpenPrRequest>('open-pr', cb)
+  onOpenPr: (cb) => subscribe<OpenPrRequest>('open-pr', cb),
+  onBriefingProgress: (cb) => subscribe<{ pr: string; step: string }>('briefing:progress', cb)
 }
 
 contextBridge.exposeInMainWorld('prway', api)

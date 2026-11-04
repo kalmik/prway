@@ -111,6 +111,8 @@ export interface ReviewGuide {
   /** Reviewable files in the suggested reading order. */
   files: GuideFile[]
   questions: string[]
+  /** The core of the change: what a reviewer must understand, with the functions where it lives. */
+  concepts?: GuideConcept[]
   // Filled in by PRway, not by the model:
   headSha: string
   provider: AiProviderId
@@ -122,6 +124,102 @@ export interface ReviewGuide {
   promptHash?: string
   /** Set when loading: the repo's instructions changed since this guide was made. */
   instructionsChanged?: boolean
+}
+
+/** One core idea of a PR (a feature or business rule it touches), found by the guide. */
+export interface GuideConcept {
+  name: string
+  kind: 'behavior' | 'feature' | 'refactor' | 'plumbing'
+  /** Functions where the behaviour lives, in the changed files. */
+  seeds: { path: string; name: string }[]
+  /** What the reviewer needs to understand about it. */
+  question: string
+}
+
+// ---- Background briefing (how the code worked before the PR, and why) ----
+
+export type TraceRole = 'seed' | 'caller' | 'entry' | 'callee' | 'test' | 'data'
+
+/** A function (or schema) found while tracing a concept through the code. */
+export interface TraceNode {
+  /** "path#name". */
+  id: string
+  path: string
+  name: string
+  kind: string
+  container?: string
+  line: number
+  endLine: number
+  role: TraceRole
+  depth: number
+  /** id of the node that led here (the function it calls, or is called by). */
+  via?: string
+  /** Key of the function's card: a hash of its path, name and code. */
+  cardKey: string
+  /** Test names, for test nodes. */
+  tests?: string[]
+}
+
+export interface ConceptTrace {
+  /** At the merge base, before the PR. */
+  base: TraceNode[]
+  /** At the PR head. */
+  head: TraceNode[]
+  /** Earlier PRs that changed the seeds. */
+  prs: { number: number; title: string; url: string }[]
+}
+
+export interface BriefingCite {
+  kind: 'code' | 'pr'
+  /** Code: the version, path and line. */
+  side?: 'base' | 'head'
+  path?: string
+  line?: number
+  /** PR: number and link. */
+  pr?: number
+  url?: string
+}
+
+export interface BriefingClaim {
+  text: string
+  cites: BriefingCite[]
+}
+
+export interface BriefingConcept {
+  name: string
+  kind: GuideConcept['kind']
+  question: string
+  before: BriefingClaim[]
+  why: BriefingClaim[]
+  change: string
+  watchOut: BriefingClaim[]
+  trace: ConceptTrace
+}
+
+/** What PRway knows about one function: written by the AI, editable by you. */
+export interface FunctionCard {
+  /** "path#name". */
+  id: string
+  /** Hash of the path, name and code it describes: the card is reused while the code stays the same. */
+  key: string
+  summary: string
+  rules: string[]
+  source: 'ai' | 'edited'
+  updatedAt: string
+  /** Set when shown for code that changed since (the card was made or edited for an older version). */
+  outdated?: boolean
+}
+
+export interface Briefing {
+  headSha: string
+  /** createdAt of the guide whose concepts were traced. */
+  guideCreatedAt: string
+  createdAt: string
+  model: string
+  concepts: BriefingConcept[]
+  /** Cards of every traced function, by key. */
+  cards: Record<string, FunctionCard>
+  stats: { nodes: number; factsFromCache: number; cardsReused: number; cardsNew: number; traceSeconds?: number; seconds: number }
 }
 
 // ---- File-by-file review walkthrough ----
@@ -364,9 +462,21 @@ export interface FunctionContext {
 
 // ---- Chat about a PR ----
 
+/** Lines of code the reviewer attached to a chat question. */
+export interface ChatCodeRef {
+  path: string
+  startLine: number
+  endLine: number
+  /** 'base' is the old version (left side of the diff), 'head' the PR's version. */
+  side: 'base' | 'head'
+  code: string
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant'
   text: string
+  /** Code the question is about (user messages only). */
+  refs?: ChatCodeRef[]
 }
 
 // ---- Knowledge base ----
@@ -488,6 +598,14 @@ export interface PrwayApi {
     /** Asks a question about the PR. The diff, guide and context are sent along with the conversation. */
     send(repo: string, number: number, messages: ChatMessage[]): Promise<ChatMessage>
   }
+  briefing: {
+    /** The saved briefing for this PR (the newest one when the head moved), or null. */
+    get(repo: string, number: number): Promise<Briefing | null>
+    /** Traces the guide's concepts through the code and explains how it worked before. */
+    generate(repo: string, number: number): Promise<Briefing>
+    /** Saves your edit of a function card; it wins over the AI's from now on. */
+    saveCard(repo: string, card: Pick<FunctionCard, 'id' | 'key' | 'summary' | 'rules'>): Promise<FunctionCard>
+  }
   kb: {
     /** Knowledge base entries about the code this PR touches. */
     related(repo: string, number: number): Promise<KbMatch[]>
@@ -525,4 +643,6 @@ export interface PrwayApi {
   openExternal(url: string): Promise<void>
   onNotifications(cb: (items: PrNotification[]) => void): () => void
   onOpenPr(cb: (req: OpenPrRequest) => void): () => void
+  /** Steps of a background build in progress ("repo#number" and the step). */
+  onBriefingProgress(cb: (p: { pr: string; step: string }) => void): () => void
 }

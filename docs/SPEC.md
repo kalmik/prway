@@ -91,7 +91,7 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 
 **Milestone 3 — review in depth**
 - Layout: collapsible PR list; open PRs as tabs (kept loaded, so each keeps its scroll, drafts and panel; up to 10);
-  the diff takes the middle, with a resizable panel (Guide · Context · Knowledge · Chat) below it or on the right,
+  the diff takes the middle, with a resizable panel (Guide · Context · Background · Chat) below it or on the right,
   and an "Ask about this PR" prompt under it.
 - Inline review comments:
   - GitHub threads show under their lines (GraphQL, with resolved/outdated state); reply, resolve, unresolve.
@@ -112,14 +112,39 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 - Context panel, per changed function: history from `git log -L` (missing blobs fetched in one batch), the PR each
   commit came from with that PR's review comments on the file, callers, and tests. A compact version (call sites,
   tests, recent commits) goes into the AI guide prompt.
+- Background tab ("before this PR"), built on demand (`src/main/trace/`):
+  1. classify: the guide names 1-4 core concepts (features or business rules) with the functions where each lives
+     (`concepts` in `GUIDE_SCHEMA`); no extra AI call
+  2. trace (git only, seconds): from those functions, at the merge base and at the head, up through callers until an
+     entry point (controllers, workers, consumers… plus `entryPoints` globs in `.prway.json`; hops inside one file
+     don't count towards the depth), down to what they call and the structs they build (Elixir aliases resolved),
+     plus the tests that call them and the earlier PRs that changed them (`git log -L`). At most 20 functions per side
+  3. explain: one AI call (medium effort) writes, per concept, how it worked before, why (only from earlier PRs,
+     comments, tests), the change and what to watch out for. Every claim cites `base:path:line`, `head:path:line` or
+     an earlier PR; claims without a valid citation are dropped
+  4. remember: the same call writes function cards (summary + rules). A card is keyed by a hash of the function's
+     path, name and code, so it is reused in any PR while that code is unchanged and is sent instead of the code.
+     Cards are editable; your edit wins, and stays visible (marked outdated) after the code changes
+  - caches: file outlines per commit, word searches per word + commit (a new commit only re-searches the files that
+    changed since a cached one), function history per code version, merged PRs forever
+    (`~/.prway/trace/<owner>/<repo>/{facts,cards,briefings}`)
+  - progress shows in the panel (tracing, then the model call, with a timer); a warm rebuild of #7612 took 4s of
+    tracing + ~75s for the model
+  - the briefing also goes into the chat prompt
 - Knowledge base: when a PR you opened in PRway is merged, its intent, business rules, review decisions and changed
-  functions are saved; entries about the same files or functions show in the Knowledge tab and go into the guide prompt.
+  functions are saved; entries about the same files or functions show at the bottom of the Background tab and go into
+  the guide prompt.
 - Chat about the PR (same provider and prompt material as the guide). Follow-ups are cheap:
   - Claude Code: one session per conversation (`--session-id`, then `--resume`), so a follow-up sends only the new
     question; the session is restarted when the conversation, the PR material or the instructions change
     (`~/.prway/chat-sessions.json`)
   - Anthropic API: the PR material is a cached prompt prefix (`cache_control`)
   - the PR material itself is cached per head commit for 30 minutes (shared with the guide)
+  - ask about specific lines: click a line number (drag for several) in the diff or the Code view and pick Ask in
+    Chat in the line menu, or select code and press ⌘L. They are attached to the next question as chips (click to
+    jump, × to remove) and sent with line numbers and the version (base or head)
+- Line menu: clicking a line number opens a small menu: Comment (diff, on lines GitHub accepts), Ask in Chat, View
+  diff (Code view, changed lines) and Copy reference (`path:12-15`)
 
 **Milestone 4 — guided review (the main view)**
 - A PR opens in the guided review; the classic file list + diff is one click away ("Files").
@@ -157,6 +182,8 @@ mechanical edits, checking the change against the stated intent, and a knowledge
   change, so a crash keeps them). A guide made for an older commit is still shown, marked outdated.
 - ↻ Refresh on the open PR: fetches new commits into the worktree and reloads details, threads and conversation,
   keeping approvals, drafts and the file you were on.
+- Files view: the changed files as a folder tree (default; single-child folders merged, each folder shows how many of its
+  files you viewed, the selected file's folders stay open) or as a flat list in the guide's reading order
 - Code view (Guided / Files / **Code**): the whole repository at the PR head like an IDE. A file tree with changed
   files and folders marked, an "only changed" filter, ⌘P quick open, editor tabs (kept per PR), read-only files with
   the PR's changed lines marked in the gutter, go to definition / references opening in new tabs, and "View diff" back
@@ -193,7 +220,7 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 │ code/     outlines, definitions, callers, history      │       │          + bottom panel  │
 │ review/   noise filter, guide prompt + schema,         │       │ DiffPane Monaco diff,    │
 │           guide generation and storage, chat           │       │          comment zones   │
-│ kb/       knowledge base of merged PRs                 │       │ Context, Knowledge, Chat │
+│ kb/       knowledge base of merged PRs                 │       │ Context, Background, Chat│
 │ ai/       AiProvider: Claude Code CLI, Anthropic API   │       └──────────────────────────┘
 │ store     settings.json + secrets via safeStorage      │        preload exposes window.prway
 └────────────────────────────────────────────────────────┘        (no Node in the renderer)

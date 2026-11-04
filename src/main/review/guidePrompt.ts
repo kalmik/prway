@@ -11,7 +11,7 @@ export type ModelGuide = Omit<ReviewGuide, 'headSha' | 'provider' | 'model' | 'c
 export const GUIDE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['intent', 'intentSource', 'summary', 'businessRules', 'mismatches', 'files', 'questions'],
+  required: ['intent', 'intentSource', 'summary', 'businessRules', 'mismatches', 'files', 'questions', 'concepts'],
   properties: {
     intent: { type: 'string', description: 'One or two sentences: what the PR is trying to achieve and why.' },
     intentSource: { type: 'string', enum: ['linked-issue', 'description', 'commits', 'inferred'] },
@@ -68,6 +68,31 @@ export const GUIDE_SCHEMA = {
       type: 'array',
       items: { type: 'string' },
       description: 'Up to 5 questions the reviewer could ask the author.'
+    },
+    concepts: {
+      type: 'array',
+      description:
+        'The core of the change: 1-4 features or business rules a reviewer must understand, most important first. Leave out mechanical edits (renames, formatting, fixtures).',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'kind', 'seeds', 'question'],
+        properties: {
+          name: { type: 'string', description: 'Short name, e.g. "ASN write when a trailerload ships".' },
+          kind: { type: 'string', enum: ['behavior', 'feature', 'refactor', 'plumbing'], description: 'behavior: existing behaviour changes; feature: new behaviour; refactor: same behaviour, new shape; plumbing: wiring, config.' },
+          seeds: {
+            type: 'array',
+            description: '1-3 functions where the behaviour lives, in files under FILES TO REVIEW. Use the function name exactly as defined (no module prefix, no arity).',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['path', 'name'],
+              properties: { path: { type: 'string' }, name: { type: 'string' } }
+            }
+          },
+          question: { type: 'string', description: 'What the reviewer needs to understand about how it worked before, e.g. "what did the ASN write guarantee when labels failed?"' }
+        }
+      }
     }
   }
 } as const
@@ -78,6 +103,7 @@ export const SYSTEM_PROMPT = `You help a human reviewer review a GitHub pull req
 - flag changes the stated intent does not explain (scope creep, unrelated edits, risky side effects)
 - order the files the way a reviewer should read them: the core change first, code that depends on it next, tests next to what they test, config and docs last
 - give each file a risk level and at most 4 focus lines; low-risk files get no focus lines
+- name the core concepts of the change (features or business rules) and the functions where each one lives; PRway traces them through the code to explain how they worked before
 
 Line numbers: the diffs are annotated with the line number in the new file ("+ 120 |" or "  120 |"). Deleted lines have no number. Use only line numbers that appear in the annotated diff.
 

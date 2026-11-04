@@ -177,7 +177,7 @@ export class CodeNavigator {
   }
 
   /** Earlier commits that touched the function's lines, newest first, with the PR they came from. */
-  private async history(repo: string, number: number, fn: ChangedFunction): Promise<HistoryCommit[]> {
+  async history(repo: string, number: number, fn: ChangedFunction): Promise<HistoryCommit[]> {
     const { headSha, mergeBase } = this.worktrees.prRefs(repo, number)
     const dir = this.worktrees.repoDir(repo)
     // `git log -L` needs old versions of the file; a partial clone downloads them one by one otherwise.

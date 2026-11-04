@@ -108,6 +108,8 @@ export interface RepoRules {
   skip: { path: string; reason: string }[]
   review: string[]
   domains: { path: string; domain: string }[]
+  /** Globs of entry points (controllers, workers…) where tracing callers stops; added to PRway's defaults. */
+  entryPoints?: string[]
   /** The team's prompt customisation ("prompts" in .prway.json), parsed by promptLayers.ts. */
   prompts?: unknown
 }
@@ -132,7 +134,7 @@ export function parseRepoRules(text: string): RepoRules {
           .filter((e): e is [string, string] => typeof e[1] === 'string')
           .map(([path, domain]) => ({ path, domain }))
       : []
-  return { skip, review: strings(raw.review), domains, prompts: raw.prompts }
+  return { skip, review: strings(raw.review), domains, entryPoints: strings(raw.entryPoints), prompts: raw.prompts }
 }
 
 /** Glob match: `**` any depth, `*` within one folder, `?` one character. A pattern without "/" matches the file name anywhere. */

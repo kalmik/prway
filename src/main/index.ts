@@ -35,6 +35,8 @@ import { KnowledgeBase } from './kb/knowledge'
 import { WorktreeCleanup } from './git/cleanup'
 import { API_KEY_SECRET, getAiSettings, saveAiSettings } from './ai/provider'
 import { chat } from './review/chat'
+import { generateBriefing, loadBriefing } from './trace/briefing'
+import { CardStore } from './trace/cards'
 import { Walkthroughs } from './review/walkthrough'
 import { generateGuide, loadGuide, relatedKnowledge, testProvider, type GuideDeps } from './review/guide'
 import { previewPrompt, promptsView, savePrompts, systemPrompt } from './review/prompts'
@@ -324,6 +326,21 @@ function registerIpc(): void {
     const tree = await prepare(repo, number)
     return generateGuide(guideDeps(), pull, tree.files, tree.headSha)
   })
+
+  handle('briefing:get', async (repo: string, number: number) => {
+    const head = worktrees.headSha(repo, number)
+    return head ? loadBriefing(repo, number, head) : null
+  })
+  handle('briefing:generate', async (repo: string, number: number) => {
+    const { gh, me } = requireGh()
+    const { baseSha: _baseSha, ...pull } = await getPull(gh, repo, number, me)
+    const tree = await prepared(repo, number)
+    const progress = (step: string) => win?.webContents.send('briefing:progress', { pr: `${repo}#${number}`, step })
+    return generateBriefing({ gh, worktrees, navigator, progress }, pull, tree.files, loadGuide(repo, number, tree.headSha))
+  })
+  handle('briefing:saveCard', (repo: string, card: { id: string; key: string; summary: string; rules: string[] }) =>
+    new CardStore(repo).put({ id: card.id, key: card.key, summary: card.summary.trim(), rules: card.rules.map((r) => r.trim()).filter(Boolean), source: 'edited' })
+  )
 
   handle('openExternal', (url: string) => {
     if (!/^https:\/\//.test(url)) throw new Error('Only https links can be opened')

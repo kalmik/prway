@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type {
   ChangedFile,
   ConversationItem,
+  ChatCodeRef,
   ChatMessage,
   DiffSide,
   DraftComment,
@@ -25,7 +26,7 @@ import { FileList } from './FileList'
 import { FileViewer } from './FileViewer'
 import { CodeBrowser, type CodeOpenRequest } from './CodeBrowser'
 import { GuidePanel } from './GuidePanel'
-import { KnowledgePanel } from './KnowledgePanel'
+import { BackgroundPanel } from './BackgroundPanel'
 import { ReviewBox } from './ReviewBox'
 import { threadGroup, ThreadsPanel } from './ThreadsPanel'
 import { FileStep, FinishStep, OverviewStep, ReviewOutline, type Step } from './Guided'
@@ -132,6 +133,9 @@ export function PrView({
   const [chatLog, setChatLog] = useStored<ChatMessage[]>(`chat:${prKey}`, [])
   const [chatBusy, setChatBusy] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
+  // Code attached to the next question, and a counter that focuses the chat box when it changes.
+  const [chatRefs, setChatRefs] = useState<ChatCodeRef[]>([])
+  const [chatFocus, setChatFocus] = useState(0)
 
   /** Guided review is the main view; "files" is the classic file list + diff. */
   const [mode, setMode] = useStored<'guided' | 'files'>('ui.viewMode', 'guided')
@@ -465,7 +469,16 @@ export function PrView({
     }
   }
 
-  const navHandlers = { onDefinition: goToDefinition, onReferences: findReferences }
+  const navHandlers = { onDefinition: goToDefinition, onReferences: findReferences, onAskChat: attachToChat }
+
+  function attachToChat(ref: ChatCodeRef) {
+    setChatRefs((refs) => [
+      ...refs.filter((r) => !(r.path === ref.path && r.side === ref.side && r.startLine === ref.startLine && r.endLine === ref.endLine)),
+      ref
+    ])
+    if (!panelOpen) showTab('chat')
+    setChatFocus((n) => n + 1)
+  }
 
   function showTab(t: Tab) {
     rememberPanelScroll()
@@ -527,8 +540,9 @@ export function PrView({
   // ---- Chat ----
 
   async function ask(text: string) {
-    const messages: ChatMessage[] = [...chatLog, { role: 'user', text }]
+    const messages: ChatMessage[] = [...chatLog, { role: 'user', text, ...(chatRefs.length ? { refs: chatRefs } : {}) }]
     setChatLog(messages)
+    setChatRefs([])
     setChatError(null)
     showTab('chat')
     setChatBusy(true)
@@ -703,7 +717,7 @@ export function PrView({
               ['threads', `Threads${waitingForMe ? ` (${waitingForMe} for you)` : openThreads ? ` (${openThreads})` : ''}`],
               ['conversation', `Conversation${conversation && conversation.length > 1 ? ` (${conversation.length - 1})` : ''}`],
               ['context', 'Context'],
-              ['knowledge', 'Knowledge'],
+              ['knowledge', 'Background'],
               ['chat', `Chat${chatLog.length ? ` (${chatLog.filter((m) => m.role === 'user').length})` : ''}`]
             ] as [Tab, string][]
           )
@@ -802,11 +816,14 @@ export function PrView({
               />
             )}
             {visibleTab === 'knowledge' && (
-              <KnowledgePanel
+              <BackgroundPanel
                 repo={repo}
                 number={number}
                 headSha={tree.headSha}
-                onOpen={(p, l) => openAt(p, l)}
+                guide={guide}
+                guideBusy={guideBusy}
+                onGenerateGuide={() => void generateGuide()}
+                onOpen={(p, l, side) => openAt(p, l, side)}
                 onOpenUrl={(u) => void api.openExternal(u)}
               />
             )}
@@ -816,6 +833,7 @@ export function PrView({
                 busy={chatBusy}
                 error={chatError}
                 onCodeRef={(p, l) => openAt(p, l)}
+                onOpenRef={(r) => openAt(r.path, r.startLine, r.side === 'base' ? 'LEFT' : 'RIGHT')}
                 onOpenUrl={(u) => void api.openExternal(u)}
                 onClear={() => setChatLog([])}
                 onAsk={ask}
@@ -824,7 +842,14 @@ export function PrView({
             </ErrorBoundary>
           </div>
         )}
-        <ChatBar busy={chatBusy} onSend={ask} />
+        <ChatBar
+          busy={chatBusy}
+          onSend={ask}
+          refs={chatRefs}
+          focus={chatFocus}
+          onRemoveRef={(r) => setChatRefs((refs) => refs.filter((x) => x !== r))}
+          onOpenRef={(r) => openAt(r.path, r.startLine, r.side === 'base' ? 'LEFT' : 'RIGHT')}
+        />
       </div>
     )
   }
