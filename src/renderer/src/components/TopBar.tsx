@@ -51,7 +51,10 @@ export function TopBar({ user, repo, onSelectRepo, notifications, onOpenNotifica
     )
   }
 
-  useEffect(loadRepos, [])
+  useEffect(() => {
+    loadRepos()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function choose(fullName: string) {
     onSelectRepo(fullName)

@@ -114,7 +114,12 @@ mechanical edits, checking the change against the stated intent, and a knowledge
   tests, recent commits) goes into the AI guide prompt.
 - Knowledge base: when a PR you opened in PRway is merged, its intent, business rules, review decisions and changed
   functions are saved; entries about the same files or functions show in the Knowledge tab and go into the guide prompt.
-- Chat about the PR (same provider and prompt material as the guide).
+- Chat about the PR (same provider and prompt material as the guide). Follow-ups are cheap:
+  - Claude Code: one session per conversation (`--session-id`, then `--resume`), so a follow-up sends only the new
+    question; the session is restarted when the conversation, the PR material or the instructions change
+    (`~/.prway/chat-sessions.json`)
+  - Anthropic API: the PR material is a cached prompt prefix (`cache_control`)
+  - the PR material itself is cached per head commit for 30 minutes (shared with the guide)
 
 **Milestone 4 — guided review (the main view)**
 - A PR opens in the guided review; the classic file list + diff is one click away ("Files").
@@ -150,6 +155,16 @@ mechanical edits, checking the change against the stated intent, and a knowledge
     instructions (default instructions keep the old cache)
 - Restores what was open: tabs, the file per PR, drafts, chat and layout live in `ui-state.json` (written on every
   change, so a crash keeps them). A guide made for an older commit is still shown, marked outdated.
+- ↻ Refresh on the open PR: fetches new commits into the worktree and reloads details, threads and conversation,
+  keeping approvals, drafts and the file you were on.
+- Code view (Guided / Files / **Code**): the whole repository at the PR head like an IDE. A file tree with changed
+  files and folders marked, an "only changed" filter, ⌘P quick open, editor tabs (kept per PR), read-only files with
+  the PR's changed lines marked in the gutter, go to definition / references opening in new tabs, and "View diff" back
+  to the review. Lists files with `git ls-tree` (trees only, nothing downloaded in the partial clone).
+  Links and go to definition to a file the PR did not change open here from any view, with "← Back to review".
+- Scroll positions are kept: per file in the diff (switching files or views returns to the same place), per file
+  in the code view (scroll and cursor), and per panel tab (Guide, Threads, Conversation…). In memory, not across
+  restarts.
 
 ### 4.2 Next (in order)
 

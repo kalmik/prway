@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useState } from 'react'
 /** Electron wraps errors from the main process as "Error invoking remote method 'x': Error: msg". Keep only msg. */
 export function errorText(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err)
@@ -48,4 +49,25 @@ export const storage = {
     else state[key] = value
     window.prway.state.set(key, empty ? null : value)
   }
+}
+
+/** State that survives restarts (saved by the main process), per key. Every open tab using the same key stays in sync. */
+export function useStored<T>(key: string, initial: T): [T, (v: T) => void] {
+  const [value, setValue] = useState<T>(() => storage.get(key, initial))
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      const { key: k, value: v } = (e as CustomEvent<{ key: string; value: T }>).detail
+      if (k === key) setValue(v)
+    }
+    window.addEventListener('prway-stored', onChange)
+    return () => window.removeEventListener('prway-stored', onChange)
+  }, [key])
+  const set = useCallback(
+    (v: T) => {
+      storage.set(key, v)
+      window.dispatchEvent(new CustomEvent('prway-stored', { detail: { key, value: v } }))
+    },
+    [key]
+  )
+  return [value, set]
 }

@@ -89,6 +89,8 @@ interface Props {
   /** Clicking inside a chunk in the code makes it the current one. */
   onSelectHunk?: (h: Hunk) => void
   onApproveNext?: (h: Hunk) => void
+  /** Opens the Threads tab (for threads that can't sit on a line). */
+  onShowThreads?: () => void
   actions: Omit<CommentActions, 'onAddDraft' | 'onCancelCompose'> & {
     onCreateDraft: (d: Omit<DraftComment, 'id' | 'headSha'>) => void
   }
@@ -99,6 +101,13 @@ const GUTTER = new Set<number>([
   monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS,
   monaco.editor.MouseTargetType.GUTTER_LINE_DECORATIONS
 ])
+
+/**
+ * Where you were in each file version ("head/<sha>/<path>"), so coming back to a file or switching between the
+ * Guided, Files and Code views returns to the same place. Also the last reveal handled, so a remount doesn't replay it.
+ */
+const scrollMemory = new Map<string, number>()
+const handledReveal = new Map<string, number>()
 
 export function DiffPane(props: Props) {
   const { file, diff, tree, guideFile, threads, drafts, sideBySide, hideWhitespace, dark, reveal } = props
@@ -262,17 +271,53 @@ export function DiffPane(props: Props) {
     }
   }, [modified, original, hunkMarks])
 
+  // ---- Remember the scroll position, and restore it once the diff is ready ----
+  const memoryKey = `head/${tree.headSha}/${file.path}`
+  useEffect(() => {
+    const de = diffEditorRef.current
+    if (!modified || !de) return
+    let ready = false
+    let frame = 0
+    const save = modified.onDidScrollChange(() => {
+      if (ready) scrollMemory.set(memoryKey, modified.getScrollTop())
+    })
+    const restore = () => {
+      frame = requestAnimationFrame(() => {
+        const r = latest.current.reveal
+        const pendingReveal = r && r.path === file.path && handledReveal.get(memoryKey) !== r.seq
+        const saved = scrollMemory.get(memoryKey)
+        if (!pendingReveal && saved !== undefined) modified.setScrollTop(saved)
+        ready = true
+      })
+    }
+    let sub: monaco.IDisposable | null = null
+    if (de.getLineChanges()) restore()
+    else
+      sub = de.onDidUpdateDiff(() => {
+        sub?.dispose()
+        restore()
+      })
+    return () => {
+      save.dispose()
+      sub?.dispose()
+      cancelAnimationFrame(frame)
+    }
+  }, [modified, memoryKey, file.path])
+
   // ---- Scroll to a requested line ----
   // The diff is computed asynchronously, and folding unchanged regions moves lines around:
   // scroll only once the diff for this model is ready.
   useEffect(() => {
     const de = diffEditorRef.current
     if (!reveal || reveal.path !== file.path || !de) return
+    // Already shown before this pane was remounted: keep where you scrolled since.
+    if (handledReveal.get(`head/${tree.headSha}/${file.path}`) === reveal.seq) return
     const ed = reveal.side === 'LEFT' && sideBySide ? original : modified
     if (!ed) return
     let frame = 0
     const go = () => {
       frame = requestAnimationFrame(() => {
+        handledReveal.set(`head/${tree.headSha}/${file.path}`, reveal.seq)
         ed.revealLineInCenter(reveal.line)
         ed.setPosition({ lineNumber: reveal.line, column: 1 })
       })
@@ -289,7 +334,7 @@ export function DiffPane(props: Props) {
       sub.dispose()
       cancelAnimationFrame(frame)
     }
-  }, [reveal, modified, original, file.path, sideBySide])
+  }, [reveal, modified, original, file.path, sideBySide, tree.headSha])
 
   // ---- Comment zones ----
   const actions: CommentActions = useMemo(
@@ -367,43 +412,26 @@ export function DiffPane(props: Props) {
   // Comments that can't sit on a line: outdated threads, and removed-line comments in the inline view.
   const detached = threads.filter((t) => !t.line || (!sideBySide && t.side === 'LEFT'))
   const detachedDrafts = sideBySide ? [] : drafts.filter((d) => d.side === 'LEFT')
-  const [showDetached, setShowDetached] = useState(false)
 
   return (
     <div className="diff-pane">
       {(detached.length > 0 || detachedDrafts.length > 0) && (
         <div className="detached small">
-          <button className="link" onClick={() => setShowDetached(!showDetached)}>
-            {showDetached ? '▾' : '▸'} {detached.length + detachedDrafts.length} comment
-            {detached.length + detachedDrafts.length > 1 ? 's' : ''} not shown on a line (outdated, or on removed lines in the
-            inline view)
-          </button>
-          {showDetached && (
-            <div className="detached-list">
-              {detached.map((t) => (
-                <div key={t.id} className="thread">
-                  <div className="thread-head small muted">
-                    {t.outdated ? 'outdated' : `removed line ${t.line}`} {t.resolved && <span className="tag">resolved</span>}
-                  </div>
-                  {t.comments.map((c) => (
-                    <div key={c.id} className="comment">
-                      <div className="comment-meta small">
-                        <strong>{c.author}</strong>
-                      </div>
-                      <Markdown text={c.body} onLink={actions.onOpenUrl} />
-                    </div>
-                  ))}
-                </div>
-              ))}
-              {detachedDrafts.map((d) => (
-                <div key={d.id} className="thread draft">
-                  <div className="thread-head small">
-                    <span className="tag pending">pending</span> removed line {d.line}
-                  </div>
-                  <Markdown text={d.body} />
-                </div>
-              ))}
-            </div>
+          {detached.length > 0 && (
+            <>
+              {detached.length} thread{detached.length > 1 ? 's' : ''} on this file can't be shown on a line
+              {detached.some((t) => t.outdated) ? ' (the code changed since)' : ''} ·{' '}
+              <button className="link" onClick={() => latest.current.onShowThreads?.()}>
+                read {detached.length > 1 ? 'them' : 'it'} in the Threads tab
+              </button>
+            </>
+          )}
+          {detachedDrafts.length > 0 && (
+            <span>
+              {detached.length > 0 && ' · '}
+              {detachedDrafts.length} pending comment{detachedDrafts.length > 1 ? 's' : ''} on removed lines (turn on side by side to see{' '}
+              {detachedDrafts.length > 1 ? 'them' : 'it'})
+            </span>
           )}
         </div>
       )}

@@ -49,7 +49,9 @@ const api: PrwayApi = {
   code: {
     definitions: call('code:definitions'),
     references: call('code:references'),
-    readFile: call('code:readFile')
+    readFile: call('code:readFile'),
+    listFiles: call('code:listFiles'),
+    changedLines: call('code:changedLines')
   },
   context: {
     changedFunctions: call('context:changedFunctions'),

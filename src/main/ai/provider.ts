@@ -8,7 +8,17 @@ import { ClaudeCodeProvider } from './claudeCode'
 
 export interface StructuredRequest {
   system: string
+  /**
+   * The stable start of the prompt (e.g. the PR material), sent before `prompt`. Providers that support it
+   * cache it, so follow-up requests with the same prefix are cheaper and faster.
+   */
+  prefix?: string
   prompt: string
+  /**
+   * Keep the conversation in a provider-side session (Claude Code). On `resume`, the session already holds the
+   * earlier turns, so only `prompt` (the new turn) is sent and `prefix` is skipped.
+   */
+  session?: { id: string; resume: boolean }
   /** JSON Schema the answer must follow. */
   schema: Record<string, unknown>
   model: string

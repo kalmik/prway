@@ -59,7 +59,9 @@ export function useWalkthroughs(
 
   const [preparing, setPreparing] = useState<{ done: number; total: number } | null>(null)
 
-  useEffect(() => setWalk({}), [headSha])
+  useEffect(() => {
+    setWalk({})
+  }, [headSha])
 
   // Saved walkthroughs are cheap to read: load all of them so every file's verdicts count.
   const allKey = allPaths.join('\n')
@@ -310,7 +312,7 @@ export function HunkCard({
   // Keep the current chunk in view when it changes (e.g. after clicking it in the code).
   const ref = useRef<HTMLLIElement>(null)
   useEffect(() => {
-    if (current) ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    if (current) void ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [current])
   // Only a new press of "c" opens the box, not the count left over from an earlier chunk.
   const seenSignal = useRef(commentSignal)

@@ -275,6 +275,8 @@ export class KnowledgeBase {
   private async commit(root: string, added: KbEntry[]): Promise<void> {
     if (!existsSync(join(root, '.git'))) await git(['init', '-q'], root)
     await git(['add', '-A'], root)
+    // Nothing changed (e.g. notes rebuilt to the same text): no commit.
+    if (!(await git(['status', '--porcelain'], root)).trim()) return
     const msg = !added.length
       ? 'Rebuild notes'
       : added.length === 1

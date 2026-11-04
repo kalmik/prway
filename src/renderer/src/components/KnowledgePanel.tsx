@@ -33,7 +33,9 @@ export function KnowledgePanel({
     api.kb.status(repo).then(setStatus, () => undefined)
   }, [repo, number])
 
-  useEffect(load, [load, headSha])
+  useEffect(() => {
+    load()
+  }, [load, headSha])
 
   async function sync() {
     setBusy(true)

@@ -24,7 +24,19 @@ export class AnthropicApiProvider implements AiProvider {
           thinking: { type: 'adaptive' },
           output_config: { effort: req.effort, format: { type: 'json_schema', schema: req.schema } },
           system: req.system,
-          messages: [{ role: 'user', content: req.prompt }]
+          // The prefix (e.g. the PR material) is marked for prompt caching: follow-ups that start the same way
+          // read it from the cache instead of paying for it again. The API keeps no session; the prompt carries it all.
+          messages: [
+            {
+              role: 'user',
+              content: req.prefix
+                ? [
+                    { type: 'text', text: req.prefix, cache_control: { type: 'ephemeral' } },
+                    { type: 'text', text: req.prompt }
+                  ]
+                : req.prompt
+            }
+          ]
         })
         .finalMessage()
 

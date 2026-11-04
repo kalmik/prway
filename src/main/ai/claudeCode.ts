@@ -47,7 +47,8 @@ export class ClaudeCodeProvider implements AiProvider {
       '--model', req.model,
       '--effort', req.effort,
       '--tools', '',
-      '--no-session-persistence',
+      // A session (chat) is kept so follow-ups only send the new question; one-off requests leave nothing behind.
+      ...(req.session ? (req.session.resume ? ['--resume', req.session.id] : ['--session-id', req.session.id]) : ['--no-session-persistence']),
       '--setting-sources', '',
       '--strict-mcp-config'
     ]
@@ -89,7 +90,7 @@ export class ClaudeCodeProvider implements AiProvider {
         resolve(parsed.structured_output as T)
       })
 
-      child.stdin.end(req.prompt)
+      child.stdin.end(req.session?.resume ? req.prompt : (req.prefix ?? '') + req.prompt)
     })
   }
 }

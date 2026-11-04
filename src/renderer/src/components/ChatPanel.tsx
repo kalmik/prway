@@ -22,7 +22,10 @@ export function ChatLog({
   onAsk: (q: string) => void
 }) {
   const end = useRef<HTMLDivElement>(null)
-  useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [messages.length, busy])
+  // Braces matter: scrollIntoView returns a Promise in recent Chromium, and an effect must return nothing or a cleanup.
+  useEffect(() => {
+    void end.current?.scrollIntoView({ block: 'end' })
+  }, [messages.length, busy])
 
   if (!messages.length && !busy) {
     return (

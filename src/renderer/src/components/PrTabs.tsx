@@ -5,6 +5,8 @@ export interface PrTab {
   number: number
   title: string
   drafts?: number
+  /** Threads waiting for your answer. */
+  waiting?: number
 }
 
 const key = (t: PrTab) => `${t.repo}#${t.number}`
@@ -45,6 +47,11 @@ export function PrTabs({
             {t.repo !== currentRepo && <span className="tab-repo">{t.repo.split('/')[1]}</span>}
             <span className="tab-number">#{t.number}</span>
             <span className="tab-title">{t.title}</span>
+            {!!t.waiting && (
+              <span className="tab-waiting" title={`${t.waiting} thread${t.waiting > 1 ? 's' : ''} waiting for your answer`}>
+                {t.waiting}
+              </span>
+            )}
             {!!t.drafts && (
               <span className="tab-drafts" title={`${t.drafts} pending comment${t.drafts > 1 ? 's' : ''} not sent yet`}>
                 {t.drafts}

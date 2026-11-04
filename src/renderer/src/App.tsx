@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AuthState, PrNotification } from '../../shared/types'
 import { Login } from './components/Login'
 import { PrList } from './components/PrList'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { PrTabs, type PrTab } from './components/PrTabs'
 import { PrView, type PrStatus } from './components/PrView'
 import { TopBar } from './components/TopBar'
@@ -79,7 +80,7 @@ export function App() {
   function updateTab(key: string, status: PrStatus) {
     setTabs((ts) => {
       const t = ts.find((x) => tabKey(x) === key)
-      if (!t || (t.title === status.title && t.drafts === status.drafts)) return ts
+      if (!t || (t.title === status.title && t.drafts === status.drafts && t.waiting === status.waiting)) return ts
       return ts.map((x) => (tabKey(x) === key ? { ...x, ...status } : x))
     })
   }
@@ -136,7 +137,9 @@ export function App() {
           )}
           {tabs.map((t) => (
             <div key={tabKey(t)} className="tab-page" hidden={tabKey(t) !== activeKey}>
-              <PrView repo={t.repo} number={t.number} onStatus={(s) => updateTab(tabKey(t), s)} />
+              <ErrorBoundary label={`#${t.number}`}>
+                <PrView repo={t.repo} number={t.number} me={auth.user?.login ?? ''} onStatus={(s) => updateTab(tabKey(t), s)} />
+              </ErrorBoundary>
             </div>
           ))}
           {!active && <div className="center muted">Select a pull request to start reviewing.</div>}

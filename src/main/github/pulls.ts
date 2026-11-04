@@ -196,6 +196,7 @@ interface RawThread {
       body: string
       createdAt: string
       url: string
+      diffHunk: string
       author: { login: string; avatarUrl: string } | null
     }[]
   }
@@ -208,7 +209,7 @@ const THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!, $cu
         pageInfo { hasNextPage endCursor }
         nodes {
           id isResolved isOutdated path line startLine originalLine diffSide
-          comments(first: 100) { nodes { databaseId body createdAt url author { login avatarUrl } } }
+          comments(first: 100) { nodes { databaseId body createdAt url diffHunk author { login avatarUrl } } }
         }
       }
     }
@@ -235,6 +236,8 @@ export async function listThreads(gh: GitHub, repo: string, number: number): Pro
         side: t.diffSide,
         resolved: t.isResolved,
         outdated: t.isOutdated,
+        originalLine: t.originalLine,
+        diffHunk: t.comments.nodes[0]?.diffHunk ?? '',
         comments: t.comments.nodes.map((c) => ({
           id: c.databaseId,
           author: c.author?.login ?? 'ghost',

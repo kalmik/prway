@@ -276,6 +276,10 @@ export interface ReviewThread {
   side: DiffSide
   resolved: boolean
   outdated: boolean
+  /** Line the thread was written on, in the commit it was written on (still set when outdated). */
+  originalLine: number | null
+  /** The code the thread was written on (GitHub's diff hunk ending at that line). */
+  diffHunk: string
   comments: ReviewComment[]
 }
 
@@ -461,6 +465,10 @@ export interface PrwayApi {
     references(repo: string, number: number, word: string): Promise<{ locations: CodeLocation[]; truncated: boolean }>
     /** Any file at the PR head, for files the PR did not change. */
     readFile(repo: string, number: number, path: string): Promise<{ text: string; skipped?: FileDiff['skipped'] }>
+    /** Every file of the repository at the PR head (for the code browser). */
+    listFiles(repo: string, number: number): Promise<string[]>
+    /** Lines of `path` at the PR head that the PR added or changed. */
+    changedLines(repo: string, number: number, path: string): Promise<number[]>
   }
   context: {
     changedFunctions(repo: string, number: number, path: string): Promise<ChangedFunction[]>

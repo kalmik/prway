@@ -1999,3 +1999,252 @@ textarea.mono {
 .my-prs .pr-item {
   opacity: 0.8;
 }
+
+/* ---- Threads tab ---- */
+.thread-group {
+  margin-top: 10px;
+}
+.thread-group-title {
+  border: none;
+  background: none;
+  padding: 2px 0;
+  text-align: left;
+}
+.group-you .thread-group-title strong {
+  color: var(--hot);
+}
+.thread-list {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 980px;
+}
+.thread-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--bg);
+}
+.group-you .thread-card {
+  border-left: 3px solid var(--hot);
+}
+.thread-card.resolved {
+  opacity: 0.7;
+}
+.thread-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.thread-snippet {
+  margin: 6px 0;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.thread-snippet .add-line {
+  background: rgba(46, 160, 67, 0.15);
+}
+.thread-snippet .del-line {
+  background: rgba(248, 81, 73, 0.15);
+}
+.outdated-tag {
+  color: var(--risk-medium);
+  border-color: var(--risk-medium);
+  margin-left: 0;
+}
+.new-tag {
+  color: var(--hot);
+  border-color: var(--hot);
+  margin-left: 0;
+}
+.comment.is-new {
+  border-left: 2px solid var(--hot);
+  padding-left: 8px;
+}
+.new-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--hot);
+  display: inline-block;
+}
+.tab-waiting {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--hot);
+  color: #fff;
+}
+
+/* ---- Code view: file tree + editor tabs ---- */
+.code-browser {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.code-tree {
+  width: 280px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.code-tree-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.code-filter {
+  width: 100%;
+  box-sizing: border-box;
+}
+.code-tree-body {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  padding: 4px 0;
+}
+.code-tree-body ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.code-tree-foot {
+  padding: 4px 10px;
+  border-top: 1px solid var(--border);
+}
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  background: none;
+  padding-block: 2px;
+  padding-right: 8px;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--text);
+  white-space: nowrap;
+  min-width: 0;
+}
+.tree-row:hover,
+.tree-cursor .tree-row {
+  background: var(--bg-hover);
+}
+.tree-row.selected {
+  background: var(--bg-active);
+}
+.tree-twisty {
+  width: 12px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  max-width: 100%;
+}
+.tree-dir {
+  font-size: 11px;
+  min-width: 0;
+  flex: 1;
+}
+.tree-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--risk-medium);
+  flex-shrink: 0;
+}
+.tree-status {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  padding-left: 6px;
+}
+.changed.status-A,
+.tree-status.status-A {
+  color: var(--add);
+}
+.changed.status-M,
+.changed.status-T,
+.tree-status.status-M,
+.tree-status.status-T {
+  color: var(--risk-medium);
+}
+.changed.status-R,
+.changed.status-C,
+.tree-status.status-R,
+.tree-status.status-C {
+  color: var(--accent);
+}
+.code-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.code-tabs {
+  display: flex;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+  flex-shrink: 0;
+  min-height: 30px;
+}
+.code-tab {
+  display: flex;
+  align-items: center;
+  border-right: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.code-tab.active {
+  background: var(--bg);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.code-tab button {
+  border: none;
+  background: none;
+  border-radius: 0;
+  font-size: 12px;
+}
+.code-tab-name {
+  padding: 6px 4px 6px 10px;
+}
+.code-tab-close {
+  padding: 4px 8px 4px 4px;
+  color: var(--muted);
+  opacity: 0.5;
+}
+.code-tab:hover .code-tab-close,
+.code-tab.active .code-tab-close {
+  opacity: 1;
+}
+.code-changed-gutter {
+  background: var(--add);
+  width: 3px !important;
+  margin-left: 2px;
+}
+.editor-host[hidden] {
+  display: none;
+}
+
+.code-empty {
+  flex-direction: column;
+  text-align: center;
+}

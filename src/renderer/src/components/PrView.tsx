@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type {
   ChangedFile,
   ConversationItem,
@@ -14,17 +14,20 @@ import type {
   ReviewThread,
   WorktreeInfo
 } from '../../../shared/types'
-import { errorText, storage } from '../util'
+import { errorText, storage, useStored } from '../util'
 import { ChatBar, ChatLog } from './ChatPanel'
 import type { NavRequest } from './codeNav'
 import { ContextPanel, type NavResults } from './ContextPanel'
 import { ConversationPanel } from './ConversationPanel'
 import { DiffPane, type HunkMark, type RevealRequest } from './DiffPane'
+import { ErrorBoundary } from './ErrorBoundary'
 import { FileList } from './FileList'
 import { FileViewer } from './FileViewer'
+import { CodeBrowser, type CodeOpenRequest } from './CodeBrowser'
 import { GuidePanel } from './GuidePanel'
 import { KnowledgePanel } from './KnowledgePanel'
 import { ReviewBox } from './ReviewBox'
+import { threadGroup, ThreadsPanel } from './ThreadsPanel'
 import { FileStep, FinishStep, OverviewStep, ReviewOutline, type Step } from './Guided'
 import { approvalKey, hunkAnchor, ReviewPanel, useWalkthroughs, type ReviewFlow } from './ReviewPanel'
 
@@ -33,7 +36,7 @@ const api = window.prway
 /** "Start review" prepares every file's walkthrough up to this many files; bigger PRs get a button. */
 const PREPARE_ALL_LIMIT = 15
 
-type Tab = 'review' | 'guide' | 'conversation' | 'context' | 'knowledge' | 'chat'
+type Tab = 'review' | 'guide' | 'threads' | 'conversation' | 'context' | 'knowledge' | 'chat'
 
 /** Where the reviewer was, for the Back button after jumping to a definition. */
 interface Place {
@@ -70,35 +73,30 @@ function usePrefersDark(): boolean {
   return dark
 }
 
-/** State that survives restarts (localStorage), per key. Every open tab using the same key stays in sync. */
-function useStored<T>(key: string, initial: T): [T, (v: T) => void] {
-  const [value, setValue] = useState<T>(() => storage.get(key, initial))
-  useEffect(() => {
-    const onChange = (e: Event) => {
-      const { key: k, value: v } = (e as CustomEvent<{ key: string; value: T }>).detail
-      if (k === key) setValue(v)
-    }
-    window.addEventListener('prway-stored', onChange)
-    return () => window.removeEventListener('prway-stored', onChange)
-  }, [key])
-  const set = useCallback(
-    (v: T) => {
-      storage.set(key, v)
-      window.dispatchEvent(new CustomEvent('prway-stored', { detail: { key, value: v } }))
-    },
-    [key]
-  )
-  return [value, set]
-}
+/** Numbers navigation requests app-wide, so a reopened PR tab never reuses one a view already handled. */
+let navSeq = 0
 
 /** What the tab bar shows about a PR. */
 export interface PrStatus {
   title: string
   /** Pending inline comments not sent yet. */
   drafts: number
+  /** Threads where someone answered you or mentioned you. */
+  waiting: number
 }
 
-export function PrView({ repo, number, onStatus }: { repo: string; number: number; onStatus?: (s: PrStatus) => void }) {
+export function PrView({
+  repo,
+  number,
+  me,
+  onStatus
+}: {
+  repo: string
+  number: number
+  /** Your GitHub login (threads waiting for you, new replies). */
+  me: string
+  onStatus?: (s: PrStatus) => void
+}) {
   const prKey = `${repo}#${number}`
   const [pull, setPull] = useState<PullDetail | null>(null)
   const [tree, setTree] = useState<WorktreeInfo | null>(null)
@@ -110,7 +108,6 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
   const [outside, setOutside] = useState<{ path: string; line: number } | null>(null)
   const [backStack, setBackStack] = useState<Place[]>([])
   const [reveal, setReveal] = useState<RevealRequest | null>(null)
-  const revealSeq = useRef(0)
   const lastLine = useRef(1)
 
   const [guide, setGuide] = useState<ReviewGuide | null>(null)
@@ -123,6 +120,7 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
   const [conversationError, setConversationError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [drafts, setDrafts] = useStored<DraftComment[]>(`drafts:${prKey}`, [])
+  const [seenThreads, setSeenThreads] = useStored<Record<string, number>>(`seenThreads:${prKey}`, {})
 
   const [nav, setNav] = useState<NavResults | null>(null)
   const [tab, setTab] = useStored<Tab>('ui.panelTab', 'guide')
@@ -138,7 +136,15 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
   /** Guided review is the main view; "files" is the classic file list + diff. */
   const [mode, setMode] = useStored<'guided' | 'files'>('ui.viewMode', 'guided')
   const [step, setStep] = useStored<Step>(`step:${prKey}`, 'overview')
-  const guided = mode === 'guided'
+  /** The code view: the whole repository at the PR head, like an IDE. It sits on top of the review mode. */
+  const [codeView, setCodeView] = useStored('ui.codeView', false)
+  const [codeOpen, setCodeOpen] = useState<CodeOpenRequest | null>(null)
+  /** Set when a link from the review opened the code view: where "Back to review" returns (null: the step you were on). */
+  const [codeReturn, setCodeReturn] = useState<{ place: Place | null } | null>(null)
+  useEffect(() => {
+    if (!codeView) setCodeReturn(null)
+  }, [codeView])
+  const guided = mode === 'guided' && !codeView
   const [commentSignal, setCommentSignal] = useState(0)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -171,28 +177,44 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
     ]).finally(() => setRefreshing(false))
   }, [repo, number])
 
+  const [reloading, setReloading] = useState(false)
+
+  /** Loads the PR, fetches its latest commits into the worktree, and reloads the guide, threads and conversation. */
+  const load = useCallback(async () => {
+    setReloading(true)
+    setError(null)
+    try {
+      await Promise.all([
+        api.pulls.get(repo, number).then(setPull, (err) => setError(errorText(err))),
+        api.worktree.prepare(repo, number).then(
+          async (t) => {
+            setTree(t)
+            const saved = await api.guide.get(repo, number)
+            setGuide(saved)
+            // Stay on the file you were reading, else the first file of the reading order, else the first file that isn't noise.
+            // A new object is set even for the same path so its diff is reloaded.
+            const last = storage.get<string | null>(`file:${prKey}`, null)
+            const first = saved?.files[0]?.path
+            setFile(
+              t.files.find((f) => f.path === last) ??
+                t.files.find((f) => f.path === first) ??
+                t.files.find((f) => !f.noise) ??
+                t.files[0] ??
+                null
+            )
+          },
+          (err) => setError(errorText(err))
+        ),
+        loadThreads()
+      ])
+    } finally {
+      setReloading(false)
+    }
+  }, [repo, number, prKey, loadThreads])
+
   useEffect(() => {
-    api.pulls.get(repo, number).then(setPull, (err) => setError(errorText(err)))
-    api.worktree.prepare(repo, number).then(
-      async (t) => {
-        setTree(t)
-        const saved = await api.guide.get(repo, number)
-        setGuide(saved)
-        // Start where you left off, else the first file of the reading order, else the first file that isn't noise.
-        const last = storage.get<string | null>(`file:${prKey}`, null)
-        const first = saved?.files[0]?.path
-        setFile(
-          t.files.find((f) => f.path === last) ??
-            t.files.find((f) => f.path === first) ??
-            t.files.find((f) => !f.noise) ??
-            t.files[0] ??
-            null
-        )
-      },
-      (err) => setError(errorText(err))
-    )
-    loadThreads()
-  }, [repo, number, loadThreads])
+    void load()
+  }, [load])
 
   useEffect(() => {
     if (viewedKey) setViewed(new Set(storage.get<string[]>(viewedKey, [])))
@@ -233,7 +255,7 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
   }, [repo, number, tree])
 
   // Walkthroughs: the file you are on (and the next one) are explained; saved ones for every file are loaded.
-  const reviewing = guided ? step === 'files' : tab === 'review' && panelOpen
+  const reviewing = guided ? step === 'files' : !codeView && tab === 'review' && panelOpen
   const stepIndex = file && !outside ? steps.findIndex((f) => f.path === file.path) : -1
   const stepPaths = useMemo(() => steps.filter((f) => hunks?.[f.path]?.length).map((f) => f.path), [steps, hunks])
   const wt = useWalkthroughs(
@@ -379,19 +401,32 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
   const here = (): Place | null =>
     outside ? { path: outside.path, line: outside.line, outside: true } : file ? { path: file.path, line: lastLine.current, outside: false } : null
 
-  /** Opens a file at a line: in the diff when the PR changed it, else read-only. */
-  function openAt(path: string, line: number | null, side: DiffSide = 'RIGHT', remember = true) {
+  /** Opens a file at a line: in the code view when it is shown, else in the diff when the PR changed it, else read-only. */
+  function openAt(path: string, line: number | null, side: DiffSide = 'RIGHT', remember = true, toDiff = false) {
+    const target = tree?.files.find((f) => f.path === path)
+    // Files the PR did not change open in the code view, with a way back to the review.
+    if ((codeView || !target) && !toDiff) {
+      if (!codeView) {
+        setCodeReturn({ place: !guided || step === 'files' ? here() : null })
+        setCodeView(true)
+      }
+      setCodeOpen({ path, line, seq: ++navSeq })
+      return
+    }
+    if (toDiff) {
+      setCodeView(false)
+      setCodeReturn(null)
+    }
     // In the guided view the diff lives in the "files" step.
-    if (guided && step !== 'files') setStep('files')
+    if (mode === 'guided' && step !== 'files') setStep('files')
     const current = here()
     if (remember && current && (current.path !== path || current.line !== line)) setBackStack((s) => [...s.slice(-30), current])
-    const target = tree?.files.find((f) => f.path === path)
     if (target) {
       setOutside(null)
       if (target.path !== file?.path) setFile(target)
       if (line) {
         lastLine.current = line
-        setReveal({ path, line, side, seq: ++revealSeq.current })
+        setReveal({ path, line, side, seq: ++navSeq })
       }
     } else {
       setOutside({ path, line: line ?? 1 })
@@ -433,6 +468,7 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
   const navHandlers = { onDefinition: goToDefinition, onReferences: findReferences }
 
   function showTab(t: Tab) {
+    rememberPanelScroll()
     setTab(t)
     setPanelOpen(true)
   }
@@ -534,8 +570,12 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
   }
   const [panelHeightLive, setPanelHeightLive] = useState(panelHeight)
   const [panelWidthLive, setPanelWidthLive] = useState(panelWidth)
-  useEffect(() => setPanelHeightLive(panelHeight), [panelHeight])
-  useEffect(() => setPanelWidthLive(panelWidth), [panelWidth])
+  useEffect(() => {
+    setPanelHeightLive(panelHeight)
+  }, [panelHeight])
+  useEffect(() => {
+    setPanelWidthLive(panelWidth)
+  }, [panelWidth])
 
   // ---- Walkthroughs and the flow handlers shared by the guided view and the Review tab ----
 
@@ -611,15 +651,42 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
   // Keep the tab's title and draft count current.
   const onStatusRef = useRef(onStatus)
   onStatusRef.current = onStatus
+  const waitingForMe = threads.filter((t) => threadGroup(t, me) === 'you').length
   useEffect(() => {
-    if (pull) onStatusRef.current?.({ title: pull.title, drafts: drafts.length })
-  }, [pull, drafts.length])
+    if (pull) onStatusRef.current?.({ title: pull.title, drafts: drafts.length, waiting: waitingForMe })
+  }, [pull, drafts.length, waitingForMe])
 
   const stale = !!guide && !!tree && guide.headSha !== tree.headSha
   const openThreads = threads.filter((t) => !t.resolved).length
 
-  // The guided view shows the review and the guide in the middle, so the panel holds the rest.
-  const visibleTab: Tab = guided && (tab === 'review' || tab === 'guide') ? 'conversation' : tab
+  // The guided view shows the review in the middle, so the Review tab is only for the Files view.
+  const reviewTab = !guided && !codeView
+  const visibleTab: Tab = !reviewTab && tab === 'review' ? 'guide' : tab
+
+  // Each panel tab keeps its own scroll position. Content that loads later (context, knowledge) is waited for briefly.
+  const panelRef = useRef<HTMLDivElement>(null)
+  const panelScroll = useRef<Partial<Record<Tab, number>>>({})
+  function rememberPanelScroll() {
+    if (panelRef.current) panelScroll.current[visibleTab] = panelRef.current.scrollTop
+  }
+  useLayoutEffect(() => {
+    const el = panelRef.current
+    if (!el || !panelOpen) return
+    const target = panelScroll.current[visibleTab] ?? 0
+    el.scrollTop = target
+    if (el.scrollTop >= target) return
+    const started = Date.now()
+    let frame = requestAnimationFrame(function retry() {
+      el.scrollTop = target
+      if (el.scrollTop < target && Date.now() - started < 1500) frame = requestAnimationFrame(retry)
+    })
+    const stop = () => cancelAnimationFrame(frame)
+    el.addEventListener('wheel', stop, { once: true })
+    return () => {
+      stop()
+      el.removeEventListener('wheel', stop)
+    }
+  }, [visibleTab, panelOpen])
 
   function renderPanel(tree: WorktreeInfo) {
     return (
@@ -633,18 +700,25 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
             [
               ['review', `Review${hunks ? ` ${steps.filter((f) => (hunks[f.path] ?? []).length && hunks[f.path].every((h) => approved.has(approvalKey(f.path, h.hash)))).length}/${steps.length}` : ''}`],
               ['guide', `Guide${stale ? ' •' : ''}`],
+              ['threads', `Threads${waitingForMe ? ` (${waitingForMe} for you)` : openThreads ? ` (${openThreads})` : ''}`],
               ['conversation', `Conversation${conversation && conversation.length > 1 ? ` (${conversation.length - 1})` : ''}`],
               ['context', 'Context'],
               ['knowledge', 'Knowledge'],
               ['chat', `Chat${chatLog.length ? ` (${chatLog.filter((m) => m.role === 'user').length})` : ''}`]
             ] as [Tab, string][]
           )
-            .filter(([id]) => !guided || (id !== 'review' && id !== 'guide'))
+            // The guided view is the review itself; the guide stays available next to it while you go through files.
+            .filter(([id]) => reviewTab || id !== 'review')
             .map(([id, label]) => (
             <button
               key={id}
               className={visibleTab === id && panelOpen ? 'active' : ''}
-              onClick={() => (visibleTab === id && panelOpen ? setPanelOpen(false) : showTab(id))}
+              onClick={() => {
+                if (visibleTab === id && panelOpen) {
+                  rememberPanelScroll()
+                  setPanelOpen(false)
+                } else showTab(id)
+              }}
             >
               {label}
             </button>
@@ -657,12 +731,16 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
         >
           {panelPosition === 'bottom' ? '→' : '↓'}
         </button>
-        <button className="icon" title={panelOpen ? 'Collapse panel' : 'Expand panel'} onClick={() => setPanelOpen(!panelOpen)}>
+        <button className="icon" title={panelOpen ? 'Collapse panel' : 'Expand panel'} onClick={() => {
+            rememberPanelScroll()
+            setPanelOpen(!panelOpen)
+          }}>
           {panelPosition === 'right' ? (panelOpen ? '▸' : '◂') : panelOpen ? '▾' : '▴'}
         </button>
         </div>
         {panelOpen && (
-          <div className="panel-content">
+          <div className="panel-content" ref={panelRef} onScroll={rememberPanelScroll}>
+            <ErrorBoundary key={visibleTab} label={`the ${visibleTab} tab`}>
             {visibleTab === 'review' && (
               <ReviewPanel
                 flow={flow}
@@ -678,6 +756,23 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
                 error={guideError}
                 onGenerate={generateGuide}
                 onGoTo={(p, l) => openAt(p, l)}
+              />
+            )}
+            {visibleTab === 'threads' && (
+              <ThreadsPanel
+                threads={threads}
+                me={me}
+                seen={seenThreads}
+                onSeen={setSeenThreads}
+                error={threadsError}
+                loading={refreshing}
+                onRefresh={() => void loadThreads()}
+                onReply={commentActions.onReply}
+                onResolve={commentActions.onResolve}
+                onShowInCode={(t) => t.line && openAt(t.path, t.line, t.side)}
+                onOpenFile={(p) => openAt(p, null)}
+                onCodeRef={(p, l) => openAt(p, l)}
+                onOpenUrl={(u) => void api.openExternal(u)}
               />
             )}
             {visibleTab === 'conversation' && (
@@ -726,6 +821,7 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
                 onAsk={ask}
               />
             )}
+            </ErrorBoundary>
           </div>
         )}
         <ChatBar busy={chatBusy} onSend={ask} />
@@ -750,14 +846,36 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
           )}
         </div>
         <div className="row nowrap">
-          <div className="segmented" role="tablist" title="Guided review, or the classic file list">
-            <button className={guided ? 'active' : ''} onClick={() => setMode('guided')}>
+          <div className="segmented" role="tablist" title="Guided review, the classic file list, or the whole repository like an IDE">
+            <button
+              className={guided ? 'active' : ''}
+              onClick={() => {
+                setMode('guided')
+                setCodeView(false)
+              }}
+            >
               Guided
             </button>
-            <button className={!guided ? 'active' : ''} onClick={() => setMode('files')}>
+            <button
+              className={mode === 'files' && !codeView ? 'active' : ''}
+              onClick={() => {
+                setMode('files')
+                setCodeView(false)
+              }}
+            >
               Files
             </button>
+            <button className={codeView ? 'active' : ''} onClick={() => setCodeView(true)} title="Browse every file of the repository at the PR head">
+              Code
+            </button>
           </div>
+          <button
+            disabled={reloading}
+            onClick={() => void load()}
+            title="Fetch new commits, comments and PR details from GitHub. Approvals and drafts are kept."
+          >
+            {reloading ? 'Refreshing…' : '↻ Refresh'}
+          </button>
           {pull && <button onClick={() => api.openExternal(pull.url)}>GitHub ↗</button>}
           <button disabled={!tree} onClick={() => api.worktree.reveal(repo, number).catch((e) => setError(errorText(e)))}>
             Worktree folder
@@ -778,7 +896,7 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
 
       {tree && (
         <div className="review-area">
-          {guided ? (
+          {codeView ? null : guided ? (
             <ReviewOutline
               flow={flow}
               step={step}
@@ -825,7 +943,29 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
           )}
 
           <div className="center-col">
-            {guided && step === 'overview' && (
+            {codeView && (
+              <CodeBrowser
+                repo={repo}
+                number={number}
+                headSha={tree.headSha}
+                changed={tree.files}
+                dark={dark}
+                nav={navHandlers}
+                request={codeOpen}
+                onViewDiff={(p, l) => openAt(p, l, 'RIGHT', true, true)}
+                onBack={
+                  codeReturn
+                    ? () => {
+                        const place = codeReturn.place
+                        setCodeReturn(null)
+                        if (place && !place.outside) openAt(place.path, place.line, 'RIGHT', false, true)
+                        else setCodeView(false)
+                      }
+                    : undefined
+                }
+              />
+            )}
+            {!codeView && guided && step === 'overview' && (
               <div className="step-scroll">
                 <OverviewStep
                   guide={guide}
@@ -846,6 +986,8 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
                   onGenerate={generateGuide}
                   onGoTo={(p, l) => openAt(p, l)}
                   onStart={() => {
+                    // Keep the guide in view while going through the files.
+                    if (guide) showTab('guide')
                     // Explain every file in the background (small PRs), so the AI can pre-approve trivial chunks up front.
                     if (wt.auto && preAi && stepPaths.length <= PREPARE_ALL_LIMIT) wt.prepareAll(stepPaths)
                     setStep('files')
@@ -882,7 +1024,7 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
                 />
               </div>
             )}
-            {(!guided || step === 'files') && (
+            {!codeView && (!guided || step === 'files') && (
             <>
             <div className="step-row">
             <div className="step-main">
@@ -970,6 +1112,7 @@ export function PrView({ repo, number, onStatus }: { repo: string; number: numbe
                       actions={commentActions}
                       hunkMarks={fileHunkMarks}
                       onSelectHunk={(h) => setCurrentHunk({ path: file.path, index: h.index })}
+                      onShowThreads={() => showTab('threads')}
                       onApproveNext={(h) => approveAndNext(file.path, h)}
                     />
                   )}

@@ -85,6 +85,20 @@ export class CodeNavigator {
     return { text: blob.toString('utf8') }
   }
 
+  /** Every file path at the PR head. Only trees are read, so nothing is downloaded in a partial clone. */
+  async listFiles(repo: string, number: number): Promise<string[]> {
+    const { headSha } = this.worktrees.prRefs(repo, number)
+    const out = await git(['ls-tree', '-r', '-z', '--name-only', headSha], this.worktrees.repoDir(repo), this.worktrees.tokenOrNull())
+    return out.split('\0').filter(Boolean)
+  }
+
+  /** Lines of `path` at the PR head that the PR added or changed. */
+  async changedLines(repo: string, number: number, path: string): Promise<number[]> {
+    const { headSha, mergeBase } = this.worktrees.prRefs(repo, number)
+    const diff = await git(['diff', '-U0', '-M', mergeBase, headSha, '--', path], this.worktrees.repoDir(repo), this.worktrees.tokenOrNull())
+    return [...changedNewLines(diff)]
+  }
+
   /** Functions (or modules, for top-level changes) that contain changed lines of `path`. */
   async changedFunctions(repo: string, number: number, path: string): Promise<ChangedFunction[]> {
     const { headSha, mergeBase } = this.worktrees.prRefs(repo, number)

@@ -2,6 +2,7 @@
 // It does not replace the review; it points attention at business rules, risky code and
 // changes the stated intent doesn't explain.
 
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { ChangedFile, PullDetail, ReviewGuide } from '../../shared/types'
@@ -73,8 +74,29 @@ export interface GuideDeps {
   kb: KnowledgeBase
 }
 
-/** Everything the model gets about a PR: shared by the guide and the chat. */
-export async function prMaterial({ gh, worktrees, navigator, kb }: GuideDeps, pull: PullDetail, files: ChangedFile[]) {
+type Material = { review: ChangedFile[]; prompt: string; truncatedFiles: string[] }
+
+/** PR material per head commit, so chat follow-ups and a guide right after don't redo the git and grep work. */
+const materialCache = new Map<string, { at: number; value: Promise<Material> }>()
+const MATERIAL_TTL_MS = 30 * 60 * 1000
+
+/** Everything the model gets about a PR: shared by the guide and the chat. Cached per head commit for 30 minutes. */
+export function prMaterial(deps: GuideDeps, pull: PullDetail, files: ChangedFile[]): Promise<Material> {
+  const head = deps.worktrees.headSha(pull.repo, pull.number) ?? 'unknown'
+  // Description edits and noise changes (e.g. a new .prway.json) give a new key too.
+  const key = createHash('sha1')
+    .update([pull.repo, pull.number, head, pull.title, pull.body ?? '', files.map((f) => `${f.path}:${f.noise?.kind ?? ''}`).join(',')].join('\n'))
+    .digest('hex')
+  const hit = materialCache.get(key)
+  if (hit && Date.now() - hit.at < MATERIAL_TTL_MS) return hit.value
+  const value = buildMaterial(deps, pull, files)
+  value.catch(() => materialCache.delete(key))
+  materialCache.set(key, { at: Date.now(), value })
+  for (const [k, v] of materialCache) if (Date.now() - v.at >= MATERIAL_TTL_MS || materialCache.size > 8) materialCache.delete(k)
+  return value
+}
+
+async function buildMaterial({ gh, worktrees, navigator, kb }: GuideDeps, pull: PullDetail, files: ChangedFile[]): Promise<Material> {
   const review = files.filter((f) => !f.noise)
   const skipped = files.filter((f) => f.noise)
   const [issues, commits, diffs, context, knowledge] = await Promise.all([
