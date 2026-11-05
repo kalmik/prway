@@ -151,6 +151,14 @@
   .chunkbar .note li { margin: 2px 0; }
   .chunkbar .note code { font-family: var(--mono); font-size: 11px; color: var(--blue); }
   .rate { float: right; opacity: .8; letter-spacing: 3px; }
+  .chunkbar.find { border-color: var(--amber); background: #1d1a12; }
+  .chunkbar.find .ttl { color: var(--amber); }
+  .finding { margin: 2px 0 8px; }
+  .finding b { color: var(--text); }
+  .finding .lnk, .finding .ev span { color: var(--blue); font-family: var(--mono); font-size: 11px; }
+  .finding .ev { color: var(--muted); font-size: 11px; }
+  .warn-mark { color: var(--amber); margin-left: auto; font-size: 11px; }
+  .fold .x { color: var(--blue); margin-left: 12px; }
 
   /* ---- Sections ---- */
   section { padding: 96px 0; }
@@ -238,9 +246,9 @@
 
 <header class="hero">
   <div class="wrap">
-    <span class="eyebrow"><b>New</b> AI accounts per organization</span>
+    <span class="eyebrow"><b>New</b> an AI review that picks what you need to read</span>
     <h1>Review pull requests<br><span class="grad">like the reviewer you are.</span></h1>
-    <p class="lede">PRway is a desktop app for the human side of code review. It walks you through a GitHub PR chunk by chunk, explains how the code worked before, and keeps the trivial stuff out of your way.</p>
+    <p class="lede">PRway is a desktop app for the human side of code review. It walks you through a GitHub PR chunk by chunk, explains how the code worked before, and shows you only the chunks that matter.</p>
     <div class="cta">
       <a class="btn primary" id="dl-main" href="#download">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>
@@ -262,28 +270,29 @@
         </div>
         <div class="body">
           <div class="outline">
-            <div class="progress">11/29 chunks · 3/9 files</div>
+            <div class="progress">5/16 chunks · 3/9 files</div>
             <div class="bar"><i></i></div>
             <div class="ofile"><span class="b ok"></span><span class="r" style="background:var(--add)"></span>schema.ex<span class="n">2/2</span></div>
-            <div class="ofile on"><span class="b"></span><span class="r" style="background:var(--del)"></span>late_fees.ex<span class="n">1/4</span></div>
-            <div class="ochunk on">L41–58 def apply/2</div>
+            <div class="ofile on"><span class="b"></span><span class="r" style="background:var(--del)"></span>late_fees.ex<span class="warn-mark">⚠</span><span class="n">1/4</span></div>
+            <div class="ochunk on">L41–58 def apply/2 <span style="color:var(--amber)">⚠</span></div>
             <div class="ochunk">L77–90 defp period_of/1</div>
             <div class="ochunk">L112–131 def backfill/1</div>
             <div class="ofile"><span class="b"></span><span class="r" style="background:var(--amber)"></span>invoice_worker.ex<span class="n">0/3</span></div>
             <div class="ofile"><span class="b ok"></span><span class="r" style="background:var(--add)"></span>config.exs<span class="n">1/1</span></div>
             <div class="ofile"><span class="b"></span><span class="r" style="background:var(--add)"></span>late_fees_test.exs<span class="n">0/6</span></div>
             <div class="ofile"><span class="b"></span><span class="r" style="background:var(--amber)"></span>notifications.ex<span class="n">0/2</span></div>
-            <div style="margin-top:14px;padding:0 6px;color:var(--muted);font-size:11px">7 pre-approved chunks hidden · see them in Files</div>
+            <div style="margin-top:14px;padding:0 6px;color:var(--muted);font-size:11px">13 chunks the AI review says you don't need to read are pre-approved · see them in Files</div>
           </div>
           <div class="main">
             <div class="fbar">lib/billing/late_fees.ex <span style="margin-left:auto" class="risk high">High risk</span><span style="font-family:-apple-system,sans-serif;color:var(--muted)">☐ Side by side</span></div>
-            <div class="brief">File 2 of 9 &nbsp;<b>core logic:</b> moves the "once per period" rule from the worker into <code style="font-family:var(--mono)">apply/2</code>. <span class="more">▸ summary · 2 to check</span></div>
+            <div class="brief">File 2 of 9 &nbsp;<b>core logic:</b> moves the "once per period" rule from the worker into <code style="font-family:var(--mono)">apply/2</code>. <span class="more">▸ summary · <span style="color:var(--amber)">⚠ 1 finding</span></span></div>
             <div class="code">
-              <div class="fold">⌃ 36 hidden lines</div>
-              <div class="chunkbar">
-                <div class="row"><span style="color:var(--blue)">▾</span><span class="ttl">Chunk 1 of 4</span><span class="hide-sm" style="color:var(--muted)">L41–58</span><span class="risk med hide-sm">Medium</span><span class="sum"></span><span class="hide-sm" style="color:var(--muted)">3 left</span><span class="ap">Approve &amp; next</span><span class="cm hide-sm">Comment</span></div>
-                <div class="note">Fees are now skipped when one already exists for the period, instead of when the invoice was "notified".<span class="rate">👎 💬</span>
-                  <ul><li>Two workers can still race between the check and the insert: the unique index added in <code>schema.ex:12</code> is what actually prevents doubles.</li></ul></div>
+              <div class="fold">⌃ 36 hidden lines<span class="x">+10 lines</span><span class="x">Show all</span></div>
+              <div class="chunkbar find">
+                <div class="row"><span style="color:var(--amber)">▾</span><span class="ttl">Chunk 1 of 4</span><span class="hide-sm" style="color:var(--muted)">L41–58</span><span class="risk med hide-sm">Medium</span><span class="sum"></span><span class="hide-sm" style="color:var(--muted)">3 left</span><span class="ap">Approve &amp; next</span><span class="cm hide-sm">Comment</span></div>
+                <div class="note">
+                  <div class="finding"><span class="risk med">medium</span> <b>A retried job can charge the fee twice</b> <span class="lnk">L43</span><span class="rate">👎 💬</span><br>The check at L43 and the insert at L46 aren't atomic, and nothing unique covers <code>(invoice_id, period)</code>: two runs for the same invoice both insert.<br><span class="ev">checked: <span>late_fee.ex:12</span> · <span>20251102_late_fees.exs:8</span> · <span>invoice_worker.ex:52</span></span></div>
+                  Fees are now skipped when one already exists for the period, instead of when the invoice was "notified".</div>
               </div>
               <div class="ln ctx"><span>41</span><span>41</span><span>  <span class="k">def</span> <span class="f">apply</span>(invoice, now) <span class="k">do</span></span></div>
               <div class="ln del"><span>42</span><span></span><span>    <span class="k">if</span> invoice.notified_at <span class="k">do</span></span></div>
@@ -294,7 +303,7 @@
               <div class="ln ctx"><span>44</span><span>46</span><span>      |&gt; Repo.<span class="f">insert</span>()</span></div>
               <div class="ln ctx"><span>45</span><span>47</span><span>    <span class="k">end</span></span></div>
               <div class="ln ctx"><span>46</span><span>48</span><span>  <span class="k">end</span></span></div>
-              <div class="fold">⌃ 28 hidden lines</div>
+              <div class="fold">⌃ 28 hidden lines<span class="x">+10 lines</span><span class="x">Show all</span></div>
             </div>
           </div>
         </div>
@@ -316,13 +325,13 @@
       </div>
       <div class="card">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg></div>
-        <h3>Trivial chunks pre-approved</h3>
-        <p>Imports, formatting, comments, moved code and low-risk edits outside the core change are approved for you, and you can spot-check them any time.</p>
+        <h3>Only what matters</h3>
+        <p>An AI review reads the whole PR and decides chunk by chunk what you need to read. Docs, tests that follow the code, renames and wiring are pre-approved, and you can spot-check them any time.</p>
       </div>
       <div class="card">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><circle cx="12" cy="12" r="4"/></svg></div>
-        <h3>Notes where you read</h3>
-        <p>Each chunk has a short note in the diff: what changes and what could go wrong. It stays collapsed until you want it.</p>
+        <h3>A review that shows its work</h3>
+        <p>Up to five findings, each at a line, with the callers, schemas and tests the AI read to confirm it. No style nits, and no findings is a fine answer.</p>
       </div>
       <div class="card">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v10M17 14V4M4 13l3-3 3 3M14 11l3 3 3-3"/></svg></div>
@@ -398,7 +407,7 @@
     <div class="steps">
       <div class="step"><h3>Sign in with GitHub</h3><p>Pick a repository. Your PRs, the ones waiting for you and drafts are grouped for you, with notifications when someone needs you.</p></div>
       <div class="step"><h3>Read the plan</h3><p>The summary says what the PR does and what changed in the rules. The guide gives the reading order; the background, the history.</p></div>
-      <div class="step"><h3>Review chunk by chunk</h3><p>Approve, comment on lines or ask about them. Pre-approved chunks stay out of the way, and progress survives new commits.</p></div>
+      <div class="step"><h3>Review chunk by chunk</h3><p>Read only what the AI review left for you, with what to check and any findings in the chunk. Approve, comment or ask; progress survives new commits.</p></div>
       <div class="step"><h3>Submit to GitHub</h3><p>Your comments go out as one review: approve, request changes or comment. Threads and replies stay in sync.</p></div>
     </div>
   </div>
