@@ -2824,3 +2824,80 @@ textarea.mono {
   font-size: inherit;
   line-height: 18px;
 }
+
+/* ---- Setup ---- */
+.setup-list {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.setup-list li {
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+}
+.setup-list li.missing {
+  border-color: var(--del);
+}
+.setup-mark {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--muted);
+}
+.setup-list li.ok .setup-mark {
+  background: var(--add);
+}
+.setup-list li.missing .setup-mark {
+  background: var(--del);
+}
+.setup-body {
+  flex: 1;
+  min-width: 0;
+}
+.setup-fix {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.setup-fix code {
+  user-select: all;
+}
+.setup-log {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  max-height: 140px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+}
+.setup-error {
+  white-space: pre-wrap;
+}
+.login-setup {
+  display: block;
+  margin: 18px auto 0;
+}
+.setup {
+  text-align: left;
+}
+.setup-list strong {
+  color: var(--text);
+}

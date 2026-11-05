@@ -111,7 +111,14 @@ const api: PrwayApi = {
   openExternal: call('openExternal'),
   onNotifications: (cb) => subscribe<PrNotification[]>('notifications', cb),
   onOpenPr: (cb) => subscribe<OpenPrRequest>('open-pr', cb),
-  onBriefingProgress: (cb) => subscribe<{ pr: string; step: string }>('briefing:progress', cb)
+  onBriefingProgress: (cb) => subscribe<{ pr: string; step: string }>('briefing:progress', cb),
+  setup: {
+    check: call('setup:check'),
+    fixGit: call('setup:fixGit'),
+    installClaude: call('setup:installClaude'),
+    openClaudeLogin: call('setup:openClaudeLogin'),
+    onProgress: (cb) => subscribe<string>('setup:progress', cb)
+  }
 }
 
 contextBridge.exposeInMainWorld('prway', api)

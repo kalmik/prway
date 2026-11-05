@@ -364,6 +364,29 @@ export interface AiConfig {
   signIns: Record<string, ClaudeSignIn>
 }
 
+// ---- First-run setup ----
+
+export interface SetupTool {
+  ok: boolean
+  /** e.g. "git version 2.50.1", null when it isn't found. */
+  version: string | null
+}
+
+/** What PRway needs outside itself, and how to get it on this computer. */
+export interface SetupCheck {
+  platform: string
+  git: SetupTool
+  /** The command that installs git here. */
+  gitFix: string
+  /** PRway can start the git install itself (macOS, Windows); on Linux it needs sudo, so you run it. */
+  gitAutoFix: boolean
+  claude: SetupTool
+  /** The official Claude Code installer command PRway runs. */
+  claudeInstall: string
+  /** Who the default account's Claude Code folder is signed in as (null when Claude Code is missing). */
+  signIn: ClaudeSignIn | null
+}
+
 /** The account AI requests on a repository use, and why. */
 export interface AiInUse {
   account: AiAccount
@@ -725,4 +748,15 @@ export interface PrwayApi {
   onOpenPr(cb: (req: OpenPrRequest) => void): () => void
   /** Steps of a background build in progress ("repo#number" and the step). */
   onBriefingProgress(cb: (p: { pr: string; step: string }) => void): () => void
+  setup: {
+    /** Checks git and Claude Code (and the sign-in of the default account, or of `accountId`). */
+    check(accountId?: string): Promise<SetupCheck>
+    /** Starts installing git (macOS: Apple's dialog; Windows: winget). Resolves with what to do next. */
+    fixGit(): Promise<string>
+    /** Runs Anthropic's Claude Code installer; output lines arrive through onProgress. */
+    installClaude(): Promise<SetupCheck>
+    /** Opens a terminal running `claude` for the account's folder, to type /login. */
+    openClaudeLogin(accountId?: string): Promise<void>
+    onProgress(cb: (line: string) => void): () => void
+  }
 }

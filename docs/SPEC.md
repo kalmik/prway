@@ -314,14 +314,28 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 ## 8. Platform notes
 
 - **Linux:** main development platform. Works.
-- **macOS:** expected to work, not tested yet. `safeStorage` uses the Keychain, and the git from Xcode Command Line Tools is enough.
-  - Known issue: an app opened from Finder or the Dock doesn't get your shell's `PATH`, so `claude` may not be found.
-  - Workaround: `PRWAY_CLAUDE_BIN=/path/to/claude`.
-  - Fix planned: also search the usual install folders (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`).
+- **macOS:** builds (`.dmg`/`.zip`, Apple silicon and Intel) and runs, not code-signed or notarized yet (right-click →
+  Open the first time). `safeStorage` uses the Keychain, and the git from Xcode Command Line Tools is enough.
+  - An app opened from Finder or the Dock doesn't get your shell's `PATH`: the packaged app takes it from your login
+    shell and adds the usual install folders (`src/main/shellPath.ts`), so `claude` and Homebrew's git are found.
+    `PRWAY_CLAUDE_BIN=/path/to/claude` still overrides.
+  - The packaged app has its own Keychain entry: sign in to GitHub again the first time.
 - **Claude Code account:** each AI account names its own config folder (Settings → AI accounts). An account with no
   folder uses Claude Code's default sign-in: the `CLAUDE_CONFIG_DIR` PRway was started with, else `~/.claude`.
   `PRWAY_CLAUDE_CONFIG_DIR` only seeds the first account when upgrading from the single AI setting.
-- **Windows:** not tried.
+- **Windows:** the NSIS installer builds (also from a Mac), not run yet. Claude Code must be reachable as `claude`
+  (the native installer's `claude.exe`; an npm-installed `claude.cmd` isn't found without a shell yet).
+- **Setup** (Settings → Setup; opens once after the first sign-in when something is missing; also linked from the
+  sign-in screen): checks git, Claude Code (the binary AI requests use) and the default account's Claude sign-in, with a
+  fix for each, run only on click:
+  - git: macOS `xcode-select --install` (Apple's dialog), Windows `winget install Git.Git`, Linux shows the
+    `apt`/`dnf`/`pacman`/`zypper` command to run (needs sudo)
+  - Claude Code: Anthropic's per-user installer (`curl -fsSL https://claude.ai/install.sh | bash`, Windows
+    `irm https://claude.ai/install.ps1 | iex`), output shown live; it lands in `~/.local/bin`, which is added to PATH
+  - sign-in: opens a terminal running `claude` for the account's folder, where you type /login; the check repeats
+    until the sign-in shows up. Each AI account without a sign-in also has a "Sign in…" button
+- **Releases:** `electron-builder.yml` + `.github/workflows/release.yml` (a `v*` tag builds every OS and attaches the
+  installers to a draft release). Website: `site/` (prway.app).
 
 ## 9. Open questions
 

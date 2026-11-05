@@ -1,31 +1,43 @@
 {
   "name": "prway",
+  "productName": "PRway",
   "version": "0.1.0",
   "private": true,
   "description": "Desktop app focused on human code review of GitHub pull requests",
+  "license": "MIT",
+  "homepage": "https://prway.app",
+  "author": {
+    "name": "Sergio Kalmik",
+    "email": "sergio.kalmik@gmail.com"
+  },
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "postinstall": "node node_modules/electron/install.js"
+    "postinstall": "node node_modules/electron/install.js",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:linux": "npm run build && electron-builder --linux"
   },
   "devDependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.2.1",
     "electron": "^45.2.1",
+    "electron-builder": "26.18.0",
     "electron-vite": "^6.0.0",
+    "monaco-editor": "^0.57.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.5"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.4.0",
-    "@monaco-editor/react": "^4.7.0",
-    "monaco-editor": "^0.57.0",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "@anthropic-ai/sdk": "^1.4.0"
   }
 }

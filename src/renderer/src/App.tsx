@@ -6,6 +6,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { PrTabs, type PrTab } from './components/PrTabs'
 import { PrView, type PrStatus } from './components/PrView'
 import { TopBar } from './components/TopBar'
+import { useFirstRunSetup } from './components/Setup'
 import { storage } from './util'
 
 const api = window.prway
@@ -84,6 +85,8 @@ export function App() {
       return ts.map((x) => (tabKey(x) === key ? { ...x, ...status } : x))
     })
   }
+
+  useFirstRunSetup(!!auth?.user)
 
   if (!auth) return <div className="center muted">Loading…</div>
   if (!auth.user) return <Login state={auth} onSignedIn={setAuth} />

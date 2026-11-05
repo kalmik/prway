@@ -135,6 +135,15 @@ export function AiAccountsSettings() {
                 <button className="small" disabled={st === 'testing'} onClick={() => void test(a.id)}>
                   {st === 'testing' ? 'Testing…' : 'Test'}
                 </button>
+                {a.provider === 'claude-code' && !config.signIns[a.id]?.email && (
+                  <button
+                    className="small"
+                    title="Opens a terminal running claude for this account's folder: type /login there"
+                    onClick={() => api.setup.openClaudeLogin(a.id).catch((e) => setError(errorText(e)))}
+                  >
+                    Sign in…
+                  </button>
+                )}
                 <button className="small" onClick={() => setEditing({ ...a })}>
                   Edit
                 </button>

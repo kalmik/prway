@@ -1,0 +1,43 @@
+# Builds the installers on each OS and attaches them to a draft GitHub release.
+# Start it by pushing a version tag (git tag v0.1.0 && git push origin v0.1.0) or from the Actions tab.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: --mac
+          - os: windows-latest
+            target: --win
+          - os: ubuntu-latest
+            target: --linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .tool-versions
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Package and publish
+        run: npx electron-builder ${{ matrix.target }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Not code-signed yet.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'

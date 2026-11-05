@@ -1,5 +1,7 @@
 import { app, BrowserWindow, ipcMain, Notification, shell } from 'electron'
 import { join } from 'node:path'
+import { fixPath } from './shellPath'
+import { checkSetup, fixGit, installClaude, openClaudeLogin } from './setup'
 import type {
   AiAccount,
   AuthState,
@@ -54,6 +56,9 @@ import {
   saveToken,
   setUiState
 } from './store'
+
+// Before anything spawns git or claude: a packaged app started from the Dock has a minimal PATH.
+if (app.isPackaged) fixPath()
 
 // ---- Session state (one signed-in GitHub account) ----
 
@@ -292,6 +297,20 @@ function registerIpc(): void {
 
   handle('notifications:list', () => poller?.list() ?? [])
   handle('notifications:markRead', (id: string) => poller?.markRead(id))
+
+  // ---- First-run setup ----
+  const setupDir = (accountId?: string) => {
+    const cfg = aiConfig()
+    const acc = cfg.accounts.find((a) => a.id === (accountId ?? cfg.defaultAccount))
+    return acc?.provider === 'claude-code' ? acc.claudeConfigDir : null
+  }
+  handle('setup:check', (accountId?: string) => checkSetup(setupDir(accountId)))
+  handle('setup:fixGit', () => fixGit())
+  handle('setup:installClaude', async () => {
+    await installClaude((line) => win?.webContents.send('setup:progress', line))
+    return checkSetup(setupDir())
+  })
+  handle('setup:openClaudeLogin', (accountId?: string) => openClaudeLogin(setupDir(accountId)))
 
   handle('ai:config', () => aiConfig())
   handle('ai:saveAccount', (account: Omit<AiAccount, 'hasApiKey'>, apiKey?: string | null) => saveAccount(account, apiKey))

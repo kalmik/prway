@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { SettingsDialog } from './SettingsDialog'
 import type { AuthState, DeviceCode } from '../../../shared/types'
 import { errorText } from '../util'
 
@@ -9,6 +10,7 @@ export function Login({ state, onSignedIn }: { state: AuthState; onSignedIn: (s:
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [setup, setSetup] = useState(false)
 
   async function deviceLogin() {
     setError(null)
@@ -104,7 +106,11 @@ export function Login({ state, onSignedIn }: { state: AuthState; onSignedIn: (s:
         )}
 
         {error && <p className="error">{error}</p>}
+        <button type="button" className="link small login-setup" onClick={() => setSetup(true)}>
+          Check what PRway needs (git, Claude Code)
+        </button>
       </div>
+      {setup && <SettingsDialog tab="setup" repo={null} onClose={() => setSetup(false)} />}
     </div>
   )
 }

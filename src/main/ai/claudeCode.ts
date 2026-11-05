@@ -99,7 +99,7 @@ export class ClaudeCodeProvider implements AiProvider {
         reject(
           new Error(
             err.code === 'ENOENT'
-              ? 'The "claude" command was not found. Install Claude Code and sign in, or switch to the API key provider.'
+              ? 'Claude Code is not installed (the "claude" command was not found). Install it in Settings → Setup, or use an AI account with an API key.'
               : `Could not start Claude Code: ${err.message}`
           )
         )

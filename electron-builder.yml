@@ -1,0 +1,48 @@
+# Installers for macOS, Windows and Linux: `npm run dist:mac` (or :win, :linux), or the release workflow on a v* tag.
+appId: app.prway.desktop
+productName: PRway
+copyright: Copyright © 2026 Sergio Kalmik
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**
+  - package.json
+# Same names every version, so https://github.com/kalmik/prway/releases/latest/download/<name> always works (see site/).
+artifactName: ${productName}-${os}-${arch}.${ext}
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  # Not signed or notarized yet: users right-click → Open the first time.
+  identity: null
+dmg:
+  title: PRway
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: true
+  perMachine: false
+  shortcutName: PRway
+
+linux:
+  category: Development
+  synopsis: Human code review of GitHub pull requests
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+
+publish:
+  provider: github
+  owner: kalmik
+  repo: prway
+  releaseType: draft

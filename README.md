@@ -13,6 +13,25 @@ npm run dev             # start the app with hot reload
 
 Other scripts: `npm run typecheck`, `npm run build` (type-check and bundle into `out/`), `npm run preview`.
 
+## Installers
+
+```bash
+npm run dist:mac        # dist/PRway-mac-{arm64,x64}.dmg and .zip
+npm run dist:win        # dist/PRway-win-x64.exe (NSIS)
+npm run dist:linux      # dist/PRway-linux-x86_64.AppImage and PRway-linux-amd64.deb
+```
+
+All three work from a Mac. Config: `electron-builder.yml`; icon: `build/icon.svg` (rendered to `build/icon.png`).
+Builds aren't code-signed yet. Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds on macOS,
+Windows and Linux and attaches the installers to a draft GitHub release. File names don't change between versions, so
+`releases/latest/download/<file>` links (used by the website) always point to the newest release.
+
+## Website
+
+`site/` is the landing page for [prway.app](https://prway.app): one static `index.html` (no build step), its icon and
+`og.png`, hosted on Cloudflare Pages (output directory `site`, no build command). Download links point to the latest
+GitHub release; they're set in the `RELEASES` constant at the bottom of the page.
+
 ## Signing in
 
 Two options:
@@ -103,3 +122,7 @@ src/renderer/src/            React UI (App, TopBar, PrList, PrView, ReviewBox)
 3. Noise filter, next level: detect moved code inside files and formatting changes beyond whitespace (AST compare).
 4. Context panel: history of the changed functions (past PRs and their review discussions) and who calls them.
 5. Knowledge base: save decisions and business rules from each merged PR and show them on future PRs.
+
+## License
+
+[MIT](LICENSE)
