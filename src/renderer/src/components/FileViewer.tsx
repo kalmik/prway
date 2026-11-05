@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { languageFor, monaco, MONO_FONT } from '../monaco'
 import { errorText } from '../util'
 import { attachCodeNav, type NavHandlers } from './codeNav'
+import { Loading } from './Loading'
 
 const api = window.prway
 
@@ -68,7 +69,9 @@ export function FileViewer({
   }, [editor, text, line])
 
   if (note) return <div className="center muted">{note}</div>
-  if (text === null) return <div className="center muted">Loading {path}…</div>
+  if (text === null) return <div className="center">
+        <Loading>Loading {path}…</Loading>
+      </div>
   return (
     <div className="editor-host">
       <Editor

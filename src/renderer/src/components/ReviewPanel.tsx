@@ -7,6 +7,7 @@ import { errorText, storage, timeAgo } from '../util'
 import { Markdown } from './Markdown'
 import { useAiInUse } from './AiAccounts'
 import { FindingItem, findingsIn } from './Findings'
+import { Elapsed, Loading } from './Loading'
 
 const api = window.prway
 
@@ -192,14 +193,7 @@ export function useWalkthroughs(
   return { walk, busy, error, auto, setAuto, explain, preparing, prepareAll, ratings, feedbackOf, rate, account: aiInUse?.account.name ?? null }
 }
 
-export function Elapsed() {
-  const [s, setS] = useState(0)
-  useEffect(() => {
-    const t = setInterval(() => setS((x) => x + 1), 1000)
-    return () => clearInterval(t)
-  }, [])
-  return <span>{s}s</span>
-}
+export { Elapsed }
 
 /**
  * 👎 on an AI hint ("not useful"), and 💬 for your reason once marked. Shown on hover (and always once marked). The hint
@@ -385,8 +379,8 @@ export function FileCard({
       )}
 
       {busy && !brief && (
-        <p className="small muted">
-          Claude{wt.account ? ` (${wt.account})` : ''} is reading this file… <Elapsed />
+        <p className="small">
+          <Loading elapsed>Claude{wt.account ? ` (${wt.account})` : ''} is reading this file…</Loading>
         </p>
       )}
       {wt.error && !busy && !brief && (
@@ -679,7 +673,11 @@ export function ReviewPanel({ flow, current, currentHunk }: { flow: ReviewFlow; 
           <h4>
             Chunks ({fileHunks.filter((h) => approved.has(approvalKey(current.path, h.hash))).length}/{fileHunks.length} approved)
           </h4>
-          {!hunks && <p className="small muted">Loading chunks…</p>}
+          {!hunks && (
+            <p className="small">
+              <Loading>Loading chunks…</Loading>
+            </p>
+          )}
           {hunks && fileHunks.length === 0 && <p className="small muted">No text changes in this file (binary or renamed only).</p>}
           <ol className="hunk-list">
             {fileHunks.map((h) => (

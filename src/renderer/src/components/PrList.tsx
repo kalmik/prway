@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PullSummary } from '../../../shared/types'
 import { errorText, storage, timeAgo } from '../util'
+import { Loading } from './Loading'
 
 const api = window.prway
 
@@ -149,7 +150,9 @@ export function PrList({
           </button>
         </p>
       )}
-      {!pulls && !error && <p className="muted pad">Loading pull requests…</p>}
+      {!pulls && !error && <p className="pad">
+          <Loading>Loading pull requests…</Loading>
+        </p>}
       {pulls && shown.length === 0 && <p className="muted pad">Nothing here.</p>}
       {pulls && shown.length > 0 && active.length === 0 && <p className="muted pad small">Nothing waiting for you: everything is approved or still a draft.</p>}
 

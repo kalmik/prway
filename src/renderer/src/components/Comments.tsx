@@ -7,6 +7,7 @@ import type { DraftComment, ReviewThread } from '../../../shared/types'
 import type { monaco } from '../monaco'
 import { errorText, timeAgo } from '../util'
 import { Markdown, plainPreview } from './Markdown'
+import { BusyButton } from './Loading'
 
 type CodeEditor = monaco.editor.IStandaloneCodeEditor
 
@@ -210,9 +211,9 @@ function Thread({ thread, actions }: { thread: ReviewThread; actions: CommentAct
         {thread.resolved && <span className="tag">resolved</span>}
         {!open && first && <span className="muted ellipsis">{first.author}: {plainPreview(first.body)}</span>}
         <span className="spacer" />
-        <button className="link" onClick={() => actions.onResolve(thread, !thread.resolved)}>
+        <BusyButton className="link" busyLabel={thread.resolved ? 'Unresolving' : 'Resolving'} onClick={() => actions.onResolve(thread, !thread.resolved)}>
           {thread.resolved ? 'Unresolve' : 'Resolve'}
-        </button>
+        </BusyButton>
         {first && (
           <button className="link" onClick={() => actions.onOpenUrl(first.url)}>
             GitHub ↗

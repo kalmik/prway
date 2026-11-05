@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import type { ReviewThread } from '../../../shared/types'
 import { errorText, timeAgo } from '../util'
 import { Markdown } from './Markdown'
+import { BusyButton } from './Loading'
 
 export type ThreadGroup = 'you' | 'others' | 'open' | 'resolved'
 
@@ -105,9 +106,9 @@ function ThreadCard({ t, isNew, props }: { t: ReviewThread; isNew: (id: number) 
         {newCount > 0 && <span className="tag new-tag">{newCount} new</span>}
         <span className="muted ellipsis">{t.path.split('/').slice(0, -1).join('/')}</span>
         <span className="spacer" />
-        <button className="link" onClick={() => props.onResolve(t, !t.resolved)}>
+        <BusyButton className="link" busyLabel={t.resolved ? 'Unresolving' : 'Resolving'} onClick={() => props.onResolve(t, !t.resolved)}>
           {t.resolved ? 'Unresolve' : 'Resolve'}
-        </button>
+        </BusyButton>
         {t.comments[0] && (
           <button className="link" onClick={() => props.onOpenUrl(t.comments[0].url)}>
             GitHub ↗

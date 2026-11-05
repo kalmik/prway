@@ -5,6 +5,7 @@ import type { Hunk, PrReview, ReviewFinding, ReviewGuide } from '../../../shared
 import { timeAgo } from '../util'
 import { Markdown } from './Markdown'
 import { Elapsed, RatedHint, type Walkthroughs } from './ReviewPanel'
+import { Loading } from './Loading'
 
 /** The review as PrView keeps it, and how to (re)run it. */
 export interface ReviewState {
@@ -118,9 +119,13 @@ export function ReviewStatus({
         )}
       </div>
       {busy && (
-        <p className="small muted">
-          Claude{account ? ` (${account})` : ''} is reviewing the PR, reading the code to confirm what it finds… <Elapsed /> (a few minutes on
-          big PRs)
+        <p className="small">
+          <Loading>
+            Claude{account ? ` (${account})` : ''} is reviewing the PR, reading the code to confirm what it finds…{' '}
+            <span className="muted">
+              <Elapsed /> (a few minutes on big PRs)
+            </span>
+          </Loading>
         </p>
       )}
       {error && !busy && (

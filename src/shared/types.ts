@@ -809,6 +809,8 @@ export interface PrwayApi {
   onOpenPr(cb: (req: OpenPrRequest) => void): () => void
   /** Steps of a background build in progress ("repo#number" and the step). */
   onBriefingProgress(cb: (p: { pr: string; step: string }) => void): () => void
+  /** Steps of preparing a PR's worktree (clone, fetch, checkout, compare). */
+  onWorktreeProgress(cb: (p: { pr: string; step: string }) => void): () => void
   findings: {
     /** The saved AI review for the PR's current head, or null. */
     get(repo: string, number: number): Promise<PrReview | null>

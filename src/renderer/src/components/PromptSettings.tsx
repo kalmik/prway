@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 import type { PromptKind, PromptLayer, PromptSettingsView } from '../../../shared/types'
 import { errorText } from '../util'
+import { Loading } from './Loading'
 
 const api = window.prway
 
@@ -67,7 +68,9 @@ export function PromptSettings({ initialRepo }: { initialRepo: string | null }) 
     )
   }, [repo])
 
-  if (!view || !draft) return <p className="small muted">Loading…</p>
+  if (!view || !draft) return <p className="small">
+        <Loading>Loading…</Loading>
+      </p>
   const dirty = JSON.stringify(draft) !== JSON.stringify(view.personal)
   const set = (patch: Partial<PromptLayer>) => setDraft({ ...draft, ...patch })
 

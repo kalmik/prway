@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AccessIssue, GhUser, PrNotification, Repo } from '../../../shared/types'
 import { errorText, timeAgo } from '../util'
 import { SettingsDialog, type SettingsTab } from './SettingsDialog'
+import { Loading } from './Loading'
 
 const api = window.prway
 
@@ -126,7 +127,9 @@ export function TopBar({ user, repo, onSelectRepo, notifications, onOpenNotifica
             )}
 
             {repoError && <p className="error pad">{repoError}</p>}
-            {!repoError && !repos && <p className="muted pad">Loading repositories and checking access…</p>}
+            {!repoError && !repos && <p className="pad">
+                <Loading>Loading repositories and checking access…</Loading>
+              </p>}
             <ul>
               {showTyped && (
                 <li>

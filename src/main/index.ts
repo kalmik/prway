@@ -80,7 +80,9 @@ const trees = new Map<string, WorktreeInfo>()
 async function prepare(repo: string, number: number): Promise<WorktreeInfo> {
   const { gh, me } = requireGh()
   const pull = await getPull(gh, repo, number, me)
-  const tree = await worktrees.prepare(repo, number, pull.baseRef)
+  const tree = await worktrees.prepare(repo, number, pull.baseRef, (step) =>
+    win?.webContents.send('worktree:progress', { pr: `${repo}#${number}`, step })
+  )
   trees.set(`${repo}#${number}`, tree)
   return tree
 }
@@ -382,7 +384,10 @@ function registerIpc(): void {
     const { baseSha: _baseSha, ...pull } = await getPull(gh, repo, number, me)
     const tree = await prepared(repo, number)
     const progress = (step: string) => win?.webContents.send('briefing:progress', { pr: `${repo}#${number}`, step })
-    return generateBriefing({ gh, worktrees, navigator, progress }, pull, tree.files, loadGuide(repo, number, tree.headSha))
+    // An empty step says it finished (the PR header's activity strip clears it).
+    return generateBriefing({ gh, worktrees, navigator, progress }, pull, tree.files, loadGuide(repo, number, tree.headSha)).finally(() =>
+      progress('')
+    )
   })
   handle('briefing:saveCard', (repo: string, card: { id: string; key: string; summary: string; rules: string[] }) =>
     new CardStore(repo).put({ id: card.id, key: card.key, summary: card.summary.trim(), rules: card.rules.map((r) => r.trim()).filter(Boolean), source: 'edited' })

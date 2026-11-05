@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
 import type { ReviewGuide } from '../../../shared/types'
 import { timeAgo } from '../util'
 import { Markdown } from './Markdown'
+import { Elapsed, Loading } from './Loading'
 
 interface Props {
   /** The AI account that generates it (its name). */
@@ -22,15 +22,6 @@ const SOURCE_LABEL: Record<ReviewGuide['intentSource'], string> = {
   inferred: 'inferred from the code (no explanation given)'
 }
 
-function Elapsed() {
-  const [s, setS] = useState(0)
-  useEffect(() => {
-    const t = setInterval(() => setS((x) => x + 1), 1000)
-    return () => clearInterval(t)
-  }, [])
-  return <span>{s}s</span>
-}
-
 export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo, account }: Props) {
   const fileName = (p: string) => p.split('/').pop()
 
@@ -48,8 +39,13 @@ export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo, acco
       </div>
 
       {busy && (
-        <p className="small muted pad">
-          Claude{account ? ` (${account})` : ''} is reading the PR… <Elapsed /> (large PRs can take a few minutes)
+        <p className="small pad">
+          <Loading>
+            Claude{account ? ` (${account})` : ''} is reading the PR…{' '}
+            <span className="muted">
+              <Elapsed /> (large PRs can take a few minutes)
+            </span>
+          </Loading>
         </p>
       )}
       {error && <p className="small error pad">{error}</p>}

@@ -3,6 +3,7 @@
 
 import { useEffect } from 'react'
 import type { CodeLocation } from '../../../shared/types'
+import { Loading } from './Loading'
 
 export interface NavResults {
   kind: 'def' | 'refs'
@@ -34,7 +35,9 @@ export function NavResultsPopup({ nav, onClose, onOpen }: { nav: NavResults; onC
       </div>
       <div className="nav-popup-body">
         {nav.error && <p className="small error">{nav.error}</p>}
-        {!nav.locations && !nav.error && <p className="small muted">Searching the PR head…</p>}
+        {!nav.locations && !nav.error && <p className="small">
+            <Loading>Searching the PR head…</Loading>
+          </p>}
         {nav.locations?.length === 0 && <p className="small muted">Nothing found.</p>}
         <ul className="locations">
           {[...byFile].map(([path, locs]) => (

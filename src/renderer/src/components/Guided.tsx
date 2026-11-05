@@ -12,13 +12,13 @@ import { Markdown } from './Markdown'
 import {
   approvalKey,
   AutoExplain,
-  Elapsed,
   FileCard,
   hunkRange,
   progressOf,
   type ReviewFlow,
   type Walkthroughs
 } from './ReviewPanel'
+import { Loading } from './Loading'
 
 export type Step = 'overview' | 'files' | 'finish'
 
@@ -343,8 +343,8 @@ export function FileBrief({ flow, file }: { flow: ReviewFlow; file: ChangedFile 
           )}
         </span>
         {busy && (
-          <span className="muted nowrap">
-            Claude{wt.account ? ` (${wt.account})` : ''} is reading this file… <Elapsed />
+          <span className="nowrap">
+            <Loading elapsed>Claude{wt.account ? ` (${wt.account})` : ''} is reading this file…</Loading>
           </span>
         )}
         {!busy && wt.error && (

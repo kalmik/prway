@@ -8,6 +8,7 @@ import { PrView, type PrStatus } from './components/PrView'
 import { TopBar } from './components/TopBar'
 import { useFirstRunSetup } from './components/Setup'
 import { storage } from './util'
+import { Loading } from './components/Loading'
 
 const api = window.prway
 
@@ -88,7 +89,12 @@ export function App() {
 
   useFirstRunSetup(!!auth?.user)
 
-  if (!auth) return <div className="center muted">Loading…</div>
+  if (!auth)
+    return (
+      <div className="center">
+        <Loading>Starting PRway…</Loading>
+      </div>
+    )
   if (!auth.user) return <Login state={auth} onSignedIn={setAuth} />
 
   return (

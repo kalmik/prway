@@ -5,6 +5,7 @@ import { useState } from 'react'
 import type { ConversationItem } from '../../../shared/types'
 import { errorText, timeAgo } from '../util'
 import { Markdown } from './Markdown'
+import { Loading } from './Loading'
 
 const STATE: Record<string, { text: string; className: string }> = {
   APPROVED: { text: 'approved', className: 'state-approved' },
@@ -59,7 +60,9 @@ export function ConversationPanel({
         </button>
       </div>
       {error && <p className="small error">{error}</p>}
-      {!items && !error && <p className="small muted">Loading the conversation…</p>}
+      {!items && !error && <p className="small">
+          <Loading>Loading the conversation…</Loading>
+        </p>}
 
       <ol className="timeline">
         {items?.map((item) => {

@@ -36,6 +36,7 @@ import { ReviewBox } from './ReviewBox'
 import { threadGroup, ThreadsPanel } from './ThreadsPanel'
 import { AiBadge, useAiInUse } from './AiAccounts'
 import { findingsIn, withReviewFocus, type ReviewState } from './Findings'
+import { ActivityStrip, Loading, type ActivityItem } from './Loading'
 import { FileBrief, FinishStep, OverviewStep, ReviewOutline, type Step } from './Guided'
 import { approvalKey, hunkAnchor, ReviewPanel, useWalkthroughs, type ReviewFlow } from './ReviewPanel'
 
@@ -160,6 +161,18 @@ export function PrView({
 
   const [chatLog, setChatLog] = useStored<ChatMessage[]>(`chat:${prKey}`, [])
   const [chatBusy, setChatBusy] = useState(false)
+  // Steps of work in the main process: preparing the worktree, building the Background.
+  const [worktreeStep, setWorktreeStep] = useState<string | null>(null)
+  const [briefingStep, setBriefingStep] = useState<string | null>(null)
+  useEffect(() => {
+    const key = `${repo}#${number}`
+    const offTree = api.onWorktreeProgress((p) => p.pr === key && setWorktreeStep(p.step))
+    const offBriefing = api.onBriefingProgress((p) => p.pr === key && setBriefingStep(p.step || null))
+    return () => {
+      offTree()
+      offBriefing()
+    }
+  }, [repo, number])
   const [chatError, setChatError] = useState<string | null>(null)
   // Code attached to the next question, and a counter that focuses the chat box when it changes.
   const [chatRefs, setChatRefs] = useState<ChatCodeRef[]>([])
@@ -214,6 +227,7 @@ export function PrView({
   /** Loads the PR, fetches its latest commits into the worktree, and reloads the guide, threads and conversation. */
   const load = useCallback(async () => {
     setReloading(true)
+    setWorktreeStep(null)
     setError(null)
     try {
       await Promise.all([
@@ -938,12 +952,24 @@ export function PrView({
   }
 
 
+  // What's running for this PR, shown in the header wherever you are.
+  const activity: ActivityItem[] = [
+    ...(reloading && tree ? [{ key: 'refresh', label: worktreeStep ? `Refreshing: ${worktreeStep.replace(/…$/, '')}` : 'Refreshing from GitHub' }] : []),
+    ...(guideBusy ? [{ key: 'guide', label: 'Writing the guide', onClick: () => showTab('guide') }] : []),
+    ...(reviewBusy
+      ? [{ key: 'review', label: 'AI review', title: 'Reading the code to find problems and pick what you need to read', onClick: () => showTab('summary') }]
+      : []),
+    ...(wt.preparing ? [{ key: 'explain', label: `Explaining files ${wt.preparing.done}/${wt.preparing.total}` }] : []),
+    ...(briefingStep ? [{ key: 'background', label: `Background: ${briefingStep.replace(/…$/, '')}`, onClick: () => showTab('knowledge') }] : []),
+    ...(chatBusy ? [{ key: 'chat', label: 'Chat is answering', onClick: () => showTab('chat') }] : [])
+  ]
+
   return (
     <div className="pr-view" ref={rootRef}>
       <div className="pr-header">
         <div className="pr-heading">
           <h2>
-            {pull?.title ?? 'Loading…'} <span className="muted">#{number}</span>
+            {pull?.title ?? <Loading>Loading the PR…</Loading>} <span className="muted">#{number}</span>
           </h2>
           {pull && (
             <p className="small muted">
@@ -954,6 +980,7 @@ export function PrView({
               <AiBadge repo={repo} inline />
             </p>
           )}
+          <ActivityStrip items={activity} />
         </div>
         <div className="row nowrap">
           <div className="segmented" role="tablist" title="Guided review, the classic file list, or the whole repository like an IDE">
@@ -984,7 +1011,7 @@ export function PrView({
             onClick={() => void load()}
             title="Fetch new commits, comments and PR details from GitHub. Approvals and drafts are kept."
           >
-            {reloading ? 'Refreshing…' : '↻ Refresh'}
+            {reloading ? <Loading>Refreshing</Loading> : '↻ Refresh'}
           </button>
           {pull && <button onClick={() => api.openExternal(pull.url)}>GitHub ↗</button>}
           <button disabled={!tree} onClick={() => api.worktree.reveal(repo, number).catch((e) => setError(errorText(e)))}>
@@ -1002,7 +1029,11 @@ export function PrView({
         </p>
       )}
 
-      {!tree && !error && <div className="center muted">Preparing worktree… (the first PR of a repo needs a clone, which can take a while)</div>}
+      {!tree && !error && (
+        <div className="center">
+          <Loading elapsed>{worktreeStep ?? 'Preparing the PR…'}</Loading>
+        </div>
+      )}
 
       {tree && (
         <div className="review-area">
@@ -1218,7 +1249,11 @@ export function PrView({
               ) : (
                 <>
                   {!file && <div className="center muted">This PR has no file changes.</div>}
-                  {file && !diff && <div className="center muted">Loading file…</div>}
+                  {file && !diff && (
+                    <div className="center">
+                      <Loading>Loading {file.path.split('/').pop()}…</Loading>
+                    </div>
+                  )}
                   {diff?.skipped && (
                     <div className="center muted">{diff.skipped === 'binary' ? 'Binary file, not shown.' : 'File is too large to show.'}</div>
                   )}

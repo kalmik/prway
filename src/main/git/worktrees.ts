@@ -113,12 +113,18 @@ export class WorktreeManager {
     const prev = this.locks.get(repo) ?? Promise.resolve()
     const next = prev.catch(() => undefined).then(fn)
     this.locks.set(repo, next)
+    // Forget the lock once nothing is queued after it, so `locks.has` means "git work in progress".
+    const clear = () => {
+      if (this.locks.get(repo) === next) this.locks.delete(repo)
+    }
+    next.then(clear, clear)
     return next
   }
 
-  private async ensureClone(repo: string): Promise<string> {
+  private async ensureClone(repo: string, step: (s: string) => void = () => undefined): Promise<string> {
     const dir = this.repoDir(repo)
     if (!existsSync(dir)) {
+      step('Cloning the repository (only the first time; big repositories take a while)…')
       mkdirSync(join(dir, '..'), { recursive: true })
       await git(
         ['clone', '--bare', '--filter=blob:none', `https://github.com/${repo}.git`, dir],
@@ -136,9 +142,11 @@ export class WorktreeManager {
   }
 
   /** Fetches the PR, creates or updates its worktree and lists the changed files. */
-  prepare(repo: string, number: number, baseRef: string): Promise<WorktreeInfo> {
+  prepare(repo: string, number: number, baseRef: string, step: (s: string) => void = () => undefined): Promise<WorktreeInfo> {
+    if (this.locks.has(repo)) step('Waiting for other git work on this repository…')
     return this.withLock(repo, async () => {
-      const dir = await this.ensureClone(repo)
+      const dir = await this.ensureClone(repo, step)
+      step('Fetching the PR and its base branch…')
       const prRef = `refs/prway/pr/${number}`
       const baseLocal = `refs/prway/base/${baseRef}`
 
@@ -152,6 +160,7 @@ export class WorktreeManager {
       const mergeBase = (await git(['merge-base', baseLocal, headSha], dir)).trim()
 
       const wt = this.worktreeDir(repo, number)
+      step('Checking out the PR…')
       if (!existsSync(wt)) {
         mkdirSync(join(wt, '..'), { recursive: true })
         await git(['worktree', 'add', '--detach', wt, headSha], dir, this.token())
@@ -161,6 +170,7 @@ export class WorktreeManager {
       }
 
       const range = [mergeBase, headSha]
+      step('Comparing with the base and sorting out noise…')
       const [nameStatus, numstat, numstatNoWs, movedOut, rules] = await Promise.all([
         git(['diff', '--name-status', '-z', '-M', ...range], dir, this.token()),
         git(['diff', '--numstat', '-z', '-M', ...range], dir, this.token()),

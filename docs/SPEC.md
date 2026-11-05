@@ -275,6 +275,12 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 5. **Syntax-aware formatting check:** compare tree-sitter syntax trees instead of tokens, so whitespace-sensitive
    languages (Python, YAML) and formatter rewrites (`mix format` parentheses) count as formatting too.
 
+- Loading feedback (`components/Loading.tsx`): every wait shows a spinner with what it is waiting for; slow AI work
+  counts seconds. Opening a PR reports its steps (waiting for other git work, cloning, fetching, checking out,
+  comparing). Under the PR title, an activity strip lists the work running for the PR wherever you are (refresh, guide,
+  AI review, explaining files, Background, chat), each with its seconds and a click to where it shows. Resolve and
+  Unresolve show a spinner until GitHub answers.
+
 ### 4.3 Ideas, not planned yet
 
 - "Explain it back" mode: the reviewer summarizes the change before seeing the AI's guide, and PRway compares the two.

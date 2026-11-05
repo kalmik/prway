@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ChatCodeRef, ChatMessage } from '../../../shared/types'
 import { Markdown } from './Markdown'
+import { Loading } from './Loading'
 
 const fileName = (path: string) => path.split('/').pop() ?? path
 const lines = (r: ChatCodeRef) => (r.startLine === r.endLine ? `${r.startLine}` : `${r.startLine}–${r.endLine}`)
@@ -96,7 +97,11 @@ export function ChatLog({
           )}
         </div>
       ))}
-      {busy && <div className="msg assistant muted small">Thinking{account ? ` (${account})` : ''}…</div>}
+      {busy && (
+        <div className="msg assistant small">
+          <Loading elapsed>Thinking{account ? ` (${account})` : ''}…</Loading>
+        </div>
+      )}
       {error && <p className="small error">{error}</p>}
       {messages.length > 0 && !busy && (
         <button className="link small" onClick={onClear}>

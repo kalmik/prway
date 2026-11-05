@@ -9,6 +9,7 @@ import { errorText, useStored } from '../util'
 import { buildTree, compact, type Dir } from '../fileTree'
 import { attachCodeNav, linesRef, type NavHandlers } from './codeNav'
 import { attachLineMenu, copyReference, LineMenu, type LineMenuAt } from './LineMenu'
+import { Loading } from './Loading'
 
 const api = window.prway
 
@@ -257,7 +258,9 @@ export function CodeBrowser({ repo, number, headSha, changed, dark, nav, request
         </div>
         <div className="code-tree-body">
           {listError && <p className="small error pad">{listError}</p>}
-          {!files && !listError && <p className="small muted pad">Loading files…</p>}
+          {!files && !listError && <p className="small pad">
+              <Loading>Loading files…</Loading>
+            </p>}
           {matches ? (
             <ul>
               {matches.length === 0 && <li className="small muted pad">No file matches.</li>}
@@ -503,7 +506,9 @@ function CodeEditor({
     <div className="editor-area">
       {lineMenu && <LineMenu at={lineMenu} items={lineMenuItems(lineMenu)} onClose={closeLineMenu} />}
       {entry && 'note' in entry && <div className="center muted">{entry.note}</div>}
-      {!entry && <div className="center muted">Loading {path}…</div>}
+      {!entry && <div className="center">
+          <Loading>Loading {path}…</Loading>
+        </div>}
       {/* Kept mounted while another file loads, so switching tabs doesn't rebuild the editor. */}
       <div className="editor-host" hidden={!ready}>
         {shown.current && (
