@@ -65,7 +65,8 @@ const api: PrwayApi = {
   },
   feedback: {
     list: call('feedback:list'),
-    rate: call('feedback:rate')
+    rate: call('feedback:rate'),
+    remove: call('feedback:remove')
   },
   chat: {
     send: call('chat:send')

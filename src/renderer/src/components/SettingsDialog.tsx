@@ -4,8 +4,9 @@ import { useState } from 'react'
 import { AiAccountsSettings, AiOrgsSettings } from './AiAccounts'
 import { PromptSettings } from './PromptSettings'
 import { SetupPanel } from './Setup'
+import { LearnedSettings } from './Learned'
 
-export type SettingsTab = 'ai' | 'orgs' | 'prompts' | 'setup'
+export type SettingsTab = 'ai' | 'orgs' | 'prompts' | 'learned' | 'setup'
 
 export function SettingsDialog({ tab: initialTab, repo, onClose }: { tab: SettingsTab; repo: string | null; onClose: () => void }) {
   const [tab, setTab] = useState<SettingsTab>(initialTab)
@@ -28,6 +29,9 @@ export function SettingsDialog({ tab: initialTab, repo, onClose }: { tab: Settin
           <button className={tab === 'prompts' ? 'active' : ''} onClick={() => setTab('prompts')}>
             Review prompts
           </button>
+          <button className={tab === 'learned' ? 'active' : ''} onClick={() => setTab('learned')}>
+            Learned
+          </button>
           <button className={tab === 'setup' ? 'active' : ''} onClick={() => setTab('setup')}>
             Setup
           </button>
@@ -36,6 +40,7 @@ export function SettingsDialog({ tab: initialTab, repo, onClose }: { tab: Settin
           {tab === 'ai' && <AiAccountsSettings />}
           {tab === 'orgs' && <AiOrgsSettings repo={repo} />}
           {tab === 'prompts' && <PromptSettings initialRepo={repo} />}
+          {tab === 'learned' && <LearnedSettings repo={repo} />}
           {tab === 'setup' && <SetupPanel onOpenTab={setTab} />}
         </div>
       </div>

@@ -38,7 +38,7 @@ import { WorktreeCleanup } from './git/cleanup'
 import { aiConfig, aiFor, deleteAccount, linkOrg, saveAccount, setDefaultAccount } from './ai/provider'
 import { claudeSignIn } from './ai/claudeCode'
 import { chat } from './review/chat'
-import { loadFeedback, rateHint } from './review/feedback'
+import { loadFeedback, rateHint, removeFeedback } from './review/feedback'
 import { generateBriefing, loadBriefing } from './trace/briefing'
 import { CardStore } from './trace/cards'
 import { Walkthroughs } from './review/walkthrough'
@@ -252,6 +252,7 @@ function registerIpc(): void {
 
   handle('feedback:list', async (repo: string) => loadFeedback(repo))
   handle('feedback:rate', async (repo: string, hint: Parameters<typeof rateHint>[1]) => rateHint(repo, hint))
+  handle('feedback:remove', async (repo: string, id: string) => removeFeedback(repo, id))
 
   handle('review:hunks', async (repo: string, number: number) => {
     await prepared(repo, number)

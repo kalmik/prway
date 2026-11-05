@@ -281,7 +281,7 @@ export function PrView({
   const aiInUse = useAiInUse(repo)
   // The guide's focus lines on the open file, minus the ones you marked as noise.
   const shownGuideFile = useMemo(
-    () => guideFile && { ...guideFile, focus: guideFile.focus.filter((f) => wt.verdict('focus', guideFile.path, f.note) !== 'noise') },
+    () => guideFile && { ...guideFile, focus: guideFile.focus.filter((f) => wt.feedbackOf('focus', guideFile.path, f.note)?.verdict !== 'noise') },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [guideFile, wt.ratings]
   )
@@ -640,8 +640,8 @@ export function PrView({
         summary: note?.summary || undefined,
         notes: note?.notes,
         risk: note?.risk,
-        verdictOf: (text: string) => wt.verdict('note', file.path, text),
-        rate: (text: string, v: HintVerdict | null) => wt.rate('note', file.path, text, v)
+        feedbackOf: (text: string) => wt.feedbackOf('note', file.path, text),
+        rate: (text: string, v: HintVerdict | null, c?: string | null) => wt.rate('note', file.path, text, v, c)
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1175,8 +1175,8 @@ export function PrView({
                       diff={diff}
                       tree={tree}
                       guideFile={shownGuideFile}
-                      focusVerdict={(note) => wt.verdict('focus', file.path, note)}
-                      onRateFocus={(note, v) => wt.rate('focus', file.path, note, v)}
+                      focusFeedback={(note) => wt.feedbackOf('focus', file.path, note)}
+                      onRateFocus={(note, v, c) => wt.rate('focus', file.path, note, v, c)}
                       threads={fileThreads}
                       drafts={fileDrafts}
                       sideBySide={sideBySide}

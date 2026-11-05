@@ -37,11 +37,14 @@ export interface Walkthroughs {
   /** The AI account that explains files for this repository (its name). */
   account: string | null
   /** Changes whenever a rating does (for memos). */
-  ratings: Map<string, HintVerdict>
-  /** Your rating of a hint (a file's Check item or a chunk's note), if any. */
-  verdict: (kind: HintFeedback['kind'], path: string, text: string) => HintVerdict | undefined
-  /** Rates a hint (null clears it). Later walkthroughs and guides get the ratings as examples. */
-  rate: (kind: HintFeedback['kind'], path: string, text: string, verdict: HintVerdict | null) => void
+  ratings: Map<string, HintFeedback>
+  /** Your rating of a hint (a Check item, a chunk's note, a focus line) and your reason, if any. */
+  feedbackOf: (kind: HintFeedback['kind'], path: string, text: string) => HintFeedback | undefined
+  /**
+   * Rates a hint (null clears it); `comment` is your reason (null removes it, undefined keeps it). Later
+   * walkthroughs and guides get the ratings as examples and the reasons as rules.
+   */
+  rate: (kind: HintFeedback['kind'], path: string, text: string, verdict: HintVerdict | null, comment?: string | null) => void
 }
 
 /**
@@ -69,8 +72,8 @@ export function useWalkthroughs(
   const [preparing, setPreparing] = useState<{ done: number; total: number } | null>(null)
 
   const aiInUse = useAiInUse(repo)
-  const [ratings, setRatings] = useState<Map<string, HintVerdict>>(new Map())
-  const toMap = (list: HintFeedback[]) => new Map(list.map((f) => [f.id, f.verdict]))
+  const [ratings, setRatings] = useState<Map<string, HintFeedback>>(new Map())
+  const toMap = (list: HintFeedback[]) => new Map(list.map((f) => [f.id, f]))
   useEffect(() => {
     let live = true
     api.feedback.list(repo).then((list) => live && setRatings(toMap(list)), () => undefined)
@@ -78,15 +81,19 @@ export function useWalkthroughs(
       live = false
     }
   }, [repo])
-  const verdict = (kind: HintFeedback['kind'], p: string, text: string) => ratings.get(`${kind}|${p}|${text}`)
-  const rate = (kind: HintFeedback['kind'], p: string, text: string, v: HintVerdict | null) => {
+  const feedbackOf = (kind: HintFeedback['kind'], p: string, text: string) => ratings.get(`${kind}|${p}|${text}`)
+  const rate = (kind: HintFeedback['kind'], p: string, text: string, v: HintVerdict | null, comment?: string | null) => {
+    const id = `${kind}|${p}|${text}`
     setRatings((m) => {
       const next = new Map(m)
-      if (v) next.set(`${kind}|${p}|${text}`, v)
-      else next.delete(`${kind}|${p}|${text}`)
+      const old = m.get(id)
+      if (v) {
+        const kept = comment === undefined && old?.verdict === v ? old.comment : comment?.trim() || undefined
+        next.set(id, { id, kind, pr: number, path: p, text, verdict: v, comment: kept, at: new Date().toISOString() })
+      } else next.delete(id)
       return next
     })
-    api.feedback.rate(repo, { kind, pr: number, path: p, text, verdict: v }).then(
+    api.feedback.rate(repo, { kind, pr: number, path: p, text, verdict: v, comment }).then(
       (list) => setRatings(toMap(list)),
       (err) => setError(errorText(err))
     )
@@ -181,7 +188,7 @@ export function useWalkthroughs(
     }
   }
 
-  return { walk, busy, error, auto, setAuto, explain, preparing, prepareAll, ratings, verdict, rate, account: aiInUse?.account.name ?? null }
+  return { walk, busy, error, auto, setAuto, explain, preparing, prepareAll, ratings, feedbackOf, rate, account: aiInUse?.account.name ?? null }
 }
 
 export function Elapsed() {
@@ -194,56 +201,140 @@ export function Elapsed() {
 }
 
 /**
- * 👍 / 👎 on an AI hint. Shown on hover (and always once rated). 👎 dims the hint; PRway tells the AI to skip
- * points like it in later files and PRs of this repository.
+ * 👎 on an AI hint ("not useful"), and 💬 for your reason once marked. Shown on hover (and always once marked). The hint
+ * dims; PRway tells the AI to skip points like it in later files and PRs of this repository, and your reason becomes a
+ * rule. Useful hints need nothing: they keep coming.
  */
-export function Rate({ verdict, onRate }: { verdict?: HintVerdict; onRate: (v: HintVerdict | null) => void }) {
+export function Rate({
+  verdict,
+  comment,
+  onRate,
+  onComment
+}: {
+  verdict?: HintVerdict
+  comment?: string
+  onRate: (v: HintVerdict | null) => void
+  /** Opens the box for your reason. */
+  onComment: () => void
+}) {
+  const noise = verdict === 'noise'
   return (
-    <span className={`rate ${verdict ? 'rated' : ''}`}>
+    <span className={`rate ${noise ? 'rated' : ''}`}>
       <button
-        className={`rate-btn ${verdict === 'useful' ? 'on' : ''}`}
-        title={verdict === 'useful' ? 'Marked useful (click to clear)' : 'Useful: keep pointing out things like this'}
-        onClick={(e) => {
-          e.stopPropagation()
-          onRate(verdict === 'useful' ? null : 'useful')
-        }}
-      >
-        👍
-      </button>
-      <button
-        className={`rate-btn ${verdict === 'noise' ? 'on' : ''}`}
+        className={`rate-btn ${noise ? 'on' : ''}`}
         title={
-          verdict === 'noise'
-            ? 'Marked not useful (click to clear)'
-            : 'Not useful: noise or too picky. The AI skips points like this from now on, and pre-approves chunks with nothing else to say'
+          noise
+            ? 'Marked not useful (click to undo)'
+            : 'Not useful: noise, too picky or wrong here. The AI skips points like this from now on, and pre-approves chunks with nothing else to say'
         }
         onClick={(e) => {
           e.stopPropagation()
-          onRate(verdict === 'noise' ? null : 'noise')
+          onRate(noise ? null : 'noise')
         }}
       >
         👎
       </button>
+      {noise && (
+        <button
+          className={`rate-btn ${comment ? 'on' : ''}`}
+          title={comment ? `Your reason: ${comment} (click to edit)` : 'Say why: PRway uses your reason as a rule in later reviews'}
+          onClick={(e) => {
+            e.stopPropagation()
+            onComment()
+          }}
+        >
+          💬
+        </button>
+      )}
     </span>
   )
 }
 
-/** A hint with its rating buttons; dimmed once marked as noise. */
+/**
+ * A hint with its 👎; dimmed once marked as not useful. 👎 (or 💬) opens a box for your reason, which later AI
+ * requests on this repository follow as a rule.
+ */
 export function RatedHint({
   text,
-  verdict,
+  feedback,
   onRate,
+  onDone,
   children
 }: {
   text: string
-  verdict?: HintVerdict
-  onRate: (v: HintVerdict | null) => void
+  feedback?: Pick<HintFeedback, 'verdict' | 'comment'>
+  /** `comment`: your reason (null removes it, undefined keeps it). */
+  onRate: (v: HintVerdict | null, comment?: string | null) => void
+  /** After the reason box closes (e.g. to close the menu it sits in). */
+  onDone?: () => void
   children: ReactNode
 }) {
+  // Only "not useful" counts (older versions also stored 👍).
+  const verdict = feedback?.verdict === 'noise' ? 'noise' : undefined
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const open = () => {
+    setDraft(feedback?.comment ?? '')
+    setEditing(true)
+  }
+  const close = () => {
+    setEditing(false)
+    onDone?.()
+  }
+  const save = (v: HintVerdict) => {
+    onRate(v, draft.trim() || null)
+    close()
+  }
   return (
-    <div className={`rated-hint ${verdict === 'noise' ? 'noise' : ''}`} data-hint={text.slice(0, 40)}>
-      <div className="rated-hint-text">{children}</div>
-      <Rate verdict={verdict} onRate={onRate} />
+    <div className={`rated-hint-wrap ${verdict === 'noise' ? 'noise' : ''}`} data-hint={text.slice(0, 40)}>
+      <div className="rated-hint">
+        <div className="rated-hint-text">{children}</div>
+        <Rate
+          verdict={verdict}
+          comment={feedback?.comment}
+          onRate={(v) => {
+            onRate(v)
+            if (v === 'noise') {
+              setDraft(feedback?.verdict === 'noise' ? (feedback.comment ?? '') : '')
+              setEditing(true)
+            } else if (!v) setEditing(false)
+          }}
+          onComment={open}
+        />
+      </div>
+      {verdict && feedback?.comment && !editing && (
+        <div className="hint-reason" title="Your reason: later reviews of this repository follow it as a rule">
+          💬 {feedback.comment}
+        </div>
+      )}
+      {editing && verdict && (
+        <div className="hint-reason-box" onClick={(e) => e.stopPropagation()}>
+          <textarea
+            autoFocus
+            rows={2}
+            value={draft}
+            placeholder="Why isn’t this useful? e.g. “we always validate this in the controller” (optional)"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation()
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                save(verdict)
+              }
+              if (e.key === 'Escape') close()
+            }}
+          />
+          <div className="row end small">
+            <span className="muted spacer">PRway follows your reason as a rule in later reviews of this repository.</span>
+            <button className="small" onClick={close}>
+              {feedback?.comment ? 'Cancel' : 'Skip'}
+            </button>
+            <button className="small primary" onClick={() => save(verdict)}>
+              Save
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -325,7 +416,7 @@ export function FileCard({
               <ul className="bullets small">
                 {w.hints.map((h, i) => (
                   <li key={i}>
-                    <RatedHint text={h} verdict={wt.verdict('check', file.path, h)} onRate={(v) => wt.rate('check', file.path, h, v)}>
+                    <RatedHint text={h} feedback={wt.feedbackOf('check', file.path, h)} onRate={(v, c) => wt.rate('check', file.path, h, v, c)}>
                       <Markdown text={h} onCodeRef={codeRef} />
                     </RatedHint>
                   </li>
@@ -468,7 +559,7 @@ export function HunkCard({
         <>
       {note?.summary && (
         <div className="hunk-summary">
-          <RatedHint text={note.summary} verdict={wt?.verdict('note', path, note.summary)} onRate={(v) => wt?.rate('note', path, note.summary, v)}>
+          <RatedHint text={note.summary} feedback={wt?.feedbackOf('note', path, note.summary)} onRate={(v, c) => wt?.rate('note', path, note.summary, v, c)}>
             <Markdown text={note.summary} onCodeRef={onCodeRef} />
           </RatedHint>
         </div>
@@ -477,7 +568,7 @@ export function HunkCard({
         <ul className="bullets hunk-notes small">
           {note.notes.map((n, i) => (
             <li key={i}>
-              <RatedHint text={n} verdict={wt?.verdict('note', path, n)} onRate={(v) => wt?.rate('note', path, n, v)}>
+              <RatedHint text={n} feedback={wt?.feedbackOf('note', path, n)} onRate={(v, c) => wt?.rate('note', path, n, v, c)}>
                 <Markdown text={n} onCodeRef={onCodeRef} />
               </RatedHint>
             </li>

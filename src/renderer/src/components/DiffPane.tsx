@@ -3,13 +3,13 @@
 
 import { DiffEditor } from '@monaco-editor/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangedFile, DiffSide, DraftComment, FileDiff, GuideFile, HintVerdict, Hunk, HunkAuto, ReviewThread, WorktreeInfo } from '../../../shared/types'
+import type { ChangedFile, DiffSide, DraftComment, FileDiff, GuideFile, HintFeedback, HintVerdict, Hunk, HunkAuto, ReviewThread, WorktreeInfo } from '../../../shared/types'
 import { languageFor, monaco, MONO_FONT } from '../monaco'
 import { attachCodeNav, linesRef, type NavHandlers } from './codeNav'
 import { attachLineMenu, copyReference, LineMenu, type LineMenuAt } from './LineMenu'
 import { LineComments, useViewZones, type CommentActions, type ZoneSpec } from './Comments'
 import { Markdown } from './Markdown'
-import { autoLabel, hunkAnchor, hunkRange, Rate, RatedHint } from './ReviewPanel'
+import { autoLabel, hunkAnchor, hunkRange, RatedHint } from './ReviewPanel'
 import { storage } from '../util'
 
 type CodeEditor = monaco.editor.IStandaloneCodeEditor
@@ -42,8 +42,8 @@ export interface HunkMark {
   /** Chunks still waiting for you in this file (not pre-approved, not approved). */
   left?: number
   /** Your rating of a sentence of the note, and how to rate it. */
-  verdictOf?: (text: string) => HintVerdict | undefined
-  rate?: (text: string, verdict: HintVerdict | null) => void
+  feedbackOf?: (text: string) => Pick<HintFeedback, 'verdict' | 'comment'> | undefined
+  rate?: (text: string, verdict: HintVerdict | null, comment?: string | null) => void
 }
 
 /** Lines a chunk covers on the side it is shown on (removed-only chunks live on the left). */
@@ -135,7 +135,7 @@ function ChunkBanner({ mark, open, onOpenChange, onApproveNext, onToggleApprove,
       {open && hasNote && (
         <div className="chunk-banner-note">
           {mark.summary && (
-            <RatedHint text={mark.summary} verdict={mark.verdictOf?.(mark.summary)} onRate={(v) => mark.rate?.(mark.summary!, v)}>
+            <RatedHint text={mark.summary} feedback={mark.feedbackOf?.(mark.summary)} onRate={(v, c) => mark.rate?.(mark.summary!, v, c)}>
               <Markdown text={mark.summary} onCodeRef={onCodeRef} />
             </RatedHint>
           )}
@@ -143,7 +143,7 @@ function ChunkBanner({ mark, open, onOpenChange, onApproveNext, onToggleApprove,
             <ul className="bullets small">
               {mark.notes.map((n, i) => (
                 <li key={i}>
-                  <RatedHint text={n} verdict={mark.verdictOf?.(n)} onRate={(v) => mark.rate?.(n, v)}>
+                  <RatedHint text={n} feedback={mark.feedbackOf?.(n)} onRate={(v, c) => mark.rate?.(n, v, c)}>
                     <Markdown text={n} onCodeRef={onCodeRef} />
                   </RatedHint>
                 </li>
@@ -177,8 +177,8 @@ interface Props {
   /** Previous / next chunk from the bar above the current chunk (guided view). */
   onMoveChunk?: (delta: 1 | -1) => void
   /** Your rating of a guide focus note on this file, and how to rate it (👎 hides the focus line). */
-  focusVerdict?: (note: string) => HintVerdict | undefined
-  onRateFocus?: (note: string, verdict: HintVerdict | null) => void
+  focusFeedback?: (note: string) => Pick<HintFeedback, 'verdict' | 'comment'> | undefined
+  onRateFocus?: (note: string, verdict: HintVerdict | null, comment?: string | null) => void
   /** Bumped by the "c" shortcut: opens a comment box on the current chunk. */
   commentSignal?: number
   /** Opens the Threads tab (for threads that can't sit on a line). */
@@ -208,7 +208,8 @@ export function DiffPane(props: Props) {
   const [modified, setModified] = useState<CodeEditor | null>(null)
   const [original, setOriginal] = useState<CodeEditor | null>(null)
   const [composing, setComposing] = useState<Composing | null>(null)
-  const [lineMenu, setLineMenu] = useState<(LineMenuAt & { side: DiffSide }) | null>(null)
+  /** `focus`: the guide's focus notes on those lines when the menu opened (a 👎 hides them from the diff right away). */
+  const [lineMenu, setLineMenu] = useState<(LineMenuAt & { side: DiffSide; focus: { line: number; note: string }[] }) | null>(null)
   const closeLineMenu = useCallback(() => setLineMenu(null), [])
   const diffEditorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null)
   // Handlers change on every render; editors keep a stable callback that reads the latest ones.
@@ -236,7 +237,13 @@ export function DiffPane(props: Props) {
       if (!ed) continue
       const hover = ed.createDecorationsCollection()
       disposables.push(
-        attachLineMenu(ed, (at) => setLineMenu({ ...at, side })),
+        attachLineMenu(ed, (at) =>
+          setLineMenu({
+            ...at,
+            side,
+            focus: side === 'RIGHT' ? (latest.current.guideFile?.focus ?? []).filter((f) => f.line >= at.start && f.line <= at.end) : []
+          })
+        ),
         ed.onMouseDown((e) => {
           const T = monaco.editor.MouseTargetType
           if ((e.target.type === T.CONTENT_TEXT || e.target.type === T.CONTENT_EMPTY) && e.target.position) {
@@ -263,26 +270,21 @@ export function DiffPane(props: Props) {
   }, [modified, original, commentable])
   useEffect(() => setLineMenu(null), [file.path])
 
-  /** The guide's focus notes on the clicked lines, each with 👍 / 👎. */
-  function focusHeader(m: LineMenuAt & { side: DiffSide }) {
-    if (m.side !== 'RIGHT' || !props.onRateFocus) return undefined
-    const notes = (guideFile?.focus ?? []).filter((f) => f.line >= m.start && f.line <= m.end)
-    if (!notes.length) return undefined
+  /** The guide's focus notes on the clicked lines, each with 👎. */
+  function focusHeader(m: LineMenuAt & { side: DiffSide; focus: { line: number; note: string }[] }) {
+    if (!m.focus.length || !props.onRateFocus) return undefined
     return (
       <div className="line-menu-focus">
-        {notes.map((f) => (
-          <div key={f.line} className="line-menu-focus-note">
-            <span>
-              <strong>Focus{notes.length > 1 ? ` L${f.line}` : ''}:</strong> {f.note}
-            </span>
-            <Rate
-              verdict={latest.current.focusVerdict?.(f.note)}
-              onRate={(v) => {
-                latest.current.onRateFocus?.(f.note, v)
-                if (v === 'noise') setLineMenu(null)
-              }}
-            />
-          </div>
+        {m.focus.map((f) => (
+          <RatedHint
+            key={f.line}
+            text={f.note}
+            feedback={latest.current.focusFeedback?.(f.note)}
+            onRate={(v, c) => latest.current.onRateFocus?.(f.note, v, c)}
+            onDone={() => setLineMenu(null)}
+          >
+            <strong>Focus{m.focus.length > 1 ? ` L${f.line}` : ''}:</strong> {f.note}
+          </RatedHint>
         ))}
       </div>
     )

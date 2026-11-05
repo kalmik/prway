@@ -190,13 +190,17 @@ mechanical edits, checking the change against the stated intent, and a knowledge
   - shown in the PR's details line ("AI: Work · you@work.com", click to change), next to the chat box, in the
     "Claude (Work) is reading…" messages, and on what the AI made (guide, walkthroughs, Background, chat replies)
   - the old single AI setting (and its API key) becomes the "Default" account on first start
-- Feedback on AI hints: 👍 / 👎 on every Check item and chunk note (on hover), and on the guide's focus lines in the
-  diff (click the line number: the focus note is at the top of the line menu; 👎 removes that line's highlight and
-  its focus link). Saved per repository in
-  `~/.prway/feedback/<owner>/<repo>.json` (last 500). The last 30 "not useful" and 10 "useful" go into every new
-  walkthrough and guide prompt as examples: points like the noise ones are left out, and a low-risk chunk with
-  nothing else to say is marked trivial, so it gets pre-approved. A 👎 dims the hint right away; saved walkthroughs
-  aren't redone (regenerate a file to apply new ratings to it)
+- Feedback on AI hints: 👎 ("not useful") on every Check item and chunk note (on hover), and on the guide's focus lines
+  in the diff (click the line number: the focus note is at the top of the line menu; 👎 removes that line's highlight
+  and its focus link). There's no 👍: a useful hint needs nothing, it keeps coming. Saved per repository in
+  `~/.prway/feedback/<owner>/<repo>.json` (last 500; 👍 ratings from older versions are ignored). The last 30 go into
+  every new walkthrough and guide prompt as examples: points like them are left out, and a low-risk chunk with nothing
+  else to say is marked trivial, so it gets pre-approved. A 👎 dims the hint right away; saved walkthroughs aren't
+  redone (regenerate a file to apply new feedback to it)
+  - your reason: 👎 opens a "Why isn't this useful?" box under the hint (optional; Enter saves), and 💬 adds or edits
+    it later. Reasons are shown under the hint and sent as rules ("apply it to any similar code"); hints with a reason
+    are always sent first
+  - Settings → Learned: everything marked for a repository, with reasons, a "with a reason" filter and delete
 - Walkthroughs are made per file on demand (and the next file in the background), with a capped effort for speed, and
   saved per head commit in `~/.prway/guides/.../files/<sha>/`. References to files that don't exist are dropped.
 - Approvals are keyed by the hunk's changed lines, so they survive new commits that don't touch that hunk; a file

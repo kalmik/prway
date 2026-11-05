@@ -277,6 +277,7 @@ export interface FileWalkthrough {
 
 // ---- Your feedback on AI hints (per repository) ----
 
+/** Only 'noise' is given now (👎); 'useful' is what older versions also stored, and it's ignored. */
 export type HintVerdict = 'useful' | 'noise'
 
 /** Your rating of one AI hint: a file's "Check" item, a chunk's note or a guide focus line. Fed back into later AI requests. */
@@ -288,6 +289,8 @@ export interface HintFeedback {
   path: string
   text: string
   verdict: HintVerdict
+  /** Your reason, in your words ("we always validate this in the controller"): used as a rule in later prompts. */
+  comment?: string
   at: string
 }
 
@@ -684,8 +687,16 @@ export interface PrwayApi {
   feedback: {
     /** Your ratings of AI hints in this repository. */
     list(repo: string): Promise<HintFeedback[]>
-    /** Rates a hint (`verdict` null removes the rating); returns the updated list. */
-    rate(repo: string, hint: Omit<HintFeedback, 'id' | 'at' | 'verdict'> & { verdict: HintVerdict | null }): Promise<HintFeedback[]>
+    /**
+     * Rates a hint (`verdict` null removes the rating). `comment`: a string sets your reason, null removes it,
+     * undefined keeps it while the verdict stays the same. Returns the updated list.
+     */
+    rate(
+      repo: string,
+      hint: Omit<HintFeedback, 'id' | 'at' | 'verdict' | 'comment'> & { verdict: HintVerdict | null; comment?: string | null }
+    ): Promise<HintFeedback[]>
+    /** Forgets one rating (Settings → Learned). */
+    remove(repo: string, id: string): Promise<HintFeedback[]>
   }
   chat: {
     /** Asks a question about the PR. The diff, guide and context are sent along with the conversation. */
