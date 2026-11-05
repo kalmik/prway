@@ -1,0 +1,9 @@
+// Cloudflare Workers static site for prway.app: serves this folder as-is, no build step.
+// Workers Builds settings: root directory "site", deploy "npx wrangler deploy", preview "npx wrangler versions upload".
+{
+  "name": "prway",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "."
+  }
+}
