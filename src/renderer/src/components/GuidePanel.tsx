@@ -38,7 +38,7 @@ export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo }: Pr
         <span className="small muted">
           {guide
             ? `${guide.model} via ${guide.provider === 'claude-code' ? 'Claude Code' : 'Anthropic API'} · ${timeAgo(guide.createdAt)}`
-            : 'AI summary of the intent, business rules, reading order and lines to check'}
+            : 'AI summary of the intent and the reading order'}
         </span>
         <button className={guide ? '' : 'primary'} disabled={busy} onClick={onGenerate}>
           {busy ? 'Thinking…' : guide ? 'Regenerate' : 'Generate'}
@@ -54,8 +54,8 @@ export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo }: Pr
 
       {!guide && !busy && !error && (
         <p className="small muted pad">
-          Generate a guide to get the intent of the PR, where business rules change, a reading order and the lines worth a
-          careful look. Noise files are left out.
+          Generate a guide to get the intent of the PR and a reading order with the lines worth a careful look. Business rule
+          changes and the background of the change show in the Background tab. Noise files are left out.
         </p>
       )}
 
@@ -77,50 +77,6 @@ export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo }: Pr
             <p className="small muted">{SOURCE_LABEL[guide.intentSource]}</p>
           </section>
 
-          {guide.mismatches.length > 0 && (
-            <section className="mismatch">
-              <h4>⚠ Not explained by the intent</h4>
-              <ul className="bullets">
-                {guide.mismatches.map((m, i) => (
-                  <li key={i}>
-                    <Markdown text={m} onCodeRef={onGoTo} />
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {guide.businessRules.length > 0 && (
-            <section>
-              <h4>Business rules changed</h4>
-              <ul className="rules">
-                {guide.businessRules.map((r, i) => (
-                  <li key={i}>
-                    <button className="link small" onClick={() => onGoTo(r.path, r.line)}>
-                      {fileName(r.path)}
-                      {r.line ? `:${r.line}` : ''}
-                    </button>
-                    <Markdown text={r.rule} onCodeRef={onGoTo} />
-                    <div className="small muted">
-                      <Markdown text={r.change} />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          <section>
-            <h4>What changed</h4>
-            <ul className="bullets">
-              {guide.summary.map((s, i) => (
-                <li key={i}>
-                  <Markdown text={s} onCodeRef={onGoTo} />
-                </li>
-              ))}
-            </ul>
-          </section>
-
           <section>
             <h4>Reading order</h4>
             <ol className="reading">
@@ -137,19 +93,6 @@ export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo }: Pr
               ))}
             </ol>
           </section>
-
-          {guide.questions.length > 0 && (
-            <section>
-              <h4>Questions for the author</h4>
-              <ul className="bullets">
-                {guide.questions.map((q, i) => (
-                  <li key={i}>
-                    <Markdown text={q} onCodeRef={onGoTo} />
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
 
         </div>
       )}

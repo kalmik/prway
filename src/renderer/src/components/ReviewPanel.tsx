@@ -1,8 +1,8 @@
 // Review flow pieces: per-file walkthroughs (AI summary, hints, related code, a note per hunk) and the cards
 // that show them. Used by the guided review (the main view) and by the Review tab of the Files view.
 
-import { useEffect, useRef, useState } from 'react'
-import type { ChangedFile, FileWalkthrough, GuideFile, Hunk, HunkAuto } from '../../../shared/types'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import type { ChangedFile, FileWalkthrough, GuideFile, HintFeedback, HintVerdict, Hunk, HunkAuto } from '../../../shared/types'
 import { errorText, storage, timeAgo } from '../util'
 import { Markdown } from './Markdown'
 
@@ -33,6 +33,12 @@ export interface Walkthroughs {
   /** Background preparation of every file's walkthrough. */
   preparing: { done: number; total: number } | null
   prepareAll: (paths: string[]) => void
+  /** Changes whenever a rating does (for memos). */
+  ratings: Map<string, HintVerdict>
+  /** Your rating of a hint (a file's Check item or a chunk's note), if any. */
+  verdict: (kind: HintFeedback['kind'], path: string, text: string) => HintVerdict | undefined
+  /** Rates a hint (null clears it). Later walkthroughs and guides get the ratings as examples. */
+  rate: (kind: HintFeedback['kind'], path: string, text: string, verdict: HintVerdict | null) => void
 }
 
 /**
@@ -58,6 +64,29 @@ export function useWalkthroughs(
   }
 
   const [preparing, setPreparing] = useState<{ done: number; total: number } | null>(null)
+
+  const [ratings, setRatings] = useState<Map<string, HintVerdict>>(new Map())
+  const toMap = (list: HintFeedback[]) => new Map(list.map((f) => [f.id, f.verdict]))
+  useEffect(() => {
+    let live = true
+    api.feedback.list(repo).then((list) => live && setRatings(toMap(list)), () => undefined)
+    return () => {
+      live = false
+    }
+  }, [repo])
+  const verdict = (kind: HintFeedback['kind'], p: string, text: string) => ratings.get(`${kind}|${p}|${text}`)
+  const rate = (kind: HintFeedback['kind'], p: string, text: string, v: HintVerdict | null) => {
+    setRatings((m) => {
+      const next = new Map(m)
+      if (v) next.set(`${kind}|${p}|${text}`, v)
+      else next.delete(`${kind}|${p}|${text}`)
+      return next
+    })
+    api.feedback.rate(repo, { kind, pr: number, path: p, text, verdict: v }).then(
+      (list) => setRatings(toMap(list)),
+      (err) => setError(errorText(err))
+    )
+  }
 
   useEffect(() => {
     setWalk({})
@@ -148,16 +177,71 @@ export function useWalkthroughs(
     }
   }
 
-  return { walk, busy, error, auto, setAuto, explain, preparing, prepareAll }
+  return { walk, busy, error, auto, setAuto, explain, preparing, prepareAll, ratings, verdict, rate }
 }
 
-function Elapsed() {
+export function Elapsed() {
   const [s, setS] = useState(0)
   useEffect(() => {
     const t = setInterval(() => setS((x) => x + 1), 1000)
     return () => clearInterval(t)
   }, [])
   return <span>{s}s</span>
+}
+
+/**
+ * 👍 / 👎 on an AI hint. Shown on hover (and always once rated). 👎 dims the hint; PRway tells the AI to skip
+ * points like it in later files and PRs of this repository.
+ */
+export function Rate({ verdict, onRate }: { verdict?: HintVerdict; onRate: (v: HintVerdict | null) => void }) {
+  return (
+    <span className={`rate ${verdict ? 'rated' : ''}`}>
+      <button
+        className={`rate-btn ${verdict === 'useful' ? 'on' : ''}`}
+        title={verdict === 'useful' ? 'Marked useful (click to clear)' : 'Useful: keep pointing out things like this'}
+        onClick={(e) => {
+          e.stopPropagation()
+          onRate(verdict === 'useful' ? null : 'useful')
+        }}
+      >
+        👍
+      </button>
+      <button
+        className={`rate-btn ${verdict === 'noise' ? 'on' : ''}`}
+        title={
+          verdict === 'noise'
+            ? 'Marked not useful (click to clear)'
+            : 'Not useful: noise or too picky. The AI skips points like this from now on, and pre-approves chunks with nothing else to say'
+        }
+        onClick={(e) => {
+          e.stopPropagation()
+          onRate(verdict === 'noise' ? null : 'noise')
+        }}
+      >
+        👎
+      </button>
+    </span>
+  )
+}
+
+/** A hint with its rating buttons; dimmed once marked as noise. */
+export function RatedHint({
+  text,
+  verdict,
+  onRate,
+  children
+}: {
+  text: string
+  verdict?: HintVerdict
+  onRate: (v: HintVerdict | null) => void
+  children: ReactNode
+}) {
+  return (
+    <div className={`rated-hint ${verdict === 'noise' ? 'noise' : ''}`} data-hint={text.slice(0, 40)}>
+      <div className="rated-hint-text">{children}</div>
+      <Rate verdict={verdict} onRate={onRate} />
+    </div>
+  )
 }
 
 // ---- Cards ----
@@ -168,6 +252,7 @@ export function FileCard({
   guideFile: g,
   wt,
   bare,
+  brief,
   onOpen,
   onOpenUrl
 }: {
@@ -176,6 +261,8 @@ export function FileCard({
   wt: Walkthroughs
   /** Without the path/risk header (the guided step already shows it). */
   bare?: boolean
+  /** Only the walkthrough's content (the guided view shows the rest in the line under the file name). */
+  brief?: boolean
   onOpen: (path: string, line: number | null) => void
   onOpenUrl: (url: string) => void
 }) {
@@ -184,26 +271,26 @@ export function FileCard({
   const codeRef = (p: string, l: number) => onOpen(p, l)
   return (
     <div className={`file-card ${g ? `risk-${g.risk}` : ''}`}>
-      {!bare && (
+      {!bare && !brief && (
         <div className="row">
           <code className="spacer file-card-path">{file.path}</code>
           {g && <span className={`risk-tag risk-${g.risk}`}>{g.risk} risk</span>}
           {g && <span className="small muted">{g.role}</span>}
         </div>
       )}
-      {g && (
+      {g && !brief && (
         <p className="small muted">
           {bare && <strong>{g.role}: </strong>}
           {g.why}
         </p>
       )}
 
-      {busy && (
+      {busy && !brief && (
         <p className="small muted">
           Claude is reading this file… <Elapsed />
         </p>
       )}
-      {wt.error && !busy && (
+      {wt.error && !busy && !brief && (
         <p className="small error">
           {wt.error}{' '}
           <button className="link" onClick={() => wt.explain(file.path, false)}>
@@ -211,7 +298,7 @@ export function FileCard({
           </button>
         </p>
       )}
-      {!w && !busy && !wt.error && (
+      {!w && !busy && !wt.error && !brief && (
         <p className="small muted">
           <button className="link" onClick={() => wt.explain(file.path, false)}>
             Explain this file
@@ -234,7 +321,9 @@ export function FileCard({
               <ul className="bullets small">
                 {w.hints.map((h, i) => (
                   <li key={i}>
-                    <Markdown text={h} onCodeRef={codeRef} />
+                    <RatedHint text={h} verdict={wt.verdict('check', file.path, h)} onRate={(v) => wt.rate('check', file.path, h, v)}>
+                      <Markdown text={h} onCodeRef={codeRef} />
+                    </RatedHint>
                   </li>
                 ))}
               </ul>
@@ -274,8 +363,12 @@ export const AUTO_LABEL: Record<HunkAuto['kind'], string> = {
   blank: 'blank lines',
   formatting: 'formatting only',
   moved: 'moved code',
-  ai: 'AI: trivial'
+  ai: 'AI: trivial',
+  background: 'outside the core change'
 }
+
+/** How a pre-approval is described: AI and background verdicts carry their own reason. */
+export const autoLabel = (a: HunkAuto) => (a.kind === 'ai' || a.kind === 'background' ? a.reason : AUTO_LABEL[a.kind])
 
 export function HunkCard({
   path,
@@ -289,8 +382,11 @@ export function HunkCard({
   onComment,
   onCodeRef,
   commentSignal = 0,
-  auto
+  auto,
+  wt
 }: {
+  /** For rating the chunk's note. */
+  wt?: Walkthroughs
   /** Set when the chunk is pre-approved (rules or AI) rather than approved by you. */
   auto?: HunkAuto
   path: string
@@ -348,7 +444,7 @@ export function HunkCard({
         {note && note.risk !== 'low' && <span className={`risk-tag risk-${note.risk}`}>{note.risk}</span>}
         {auto && (
           <span className="auto-tag" title={`${auto.reason}. Untick to review it yourself.`}>
-            pre-approved · {auto.kind === 'ai' ? auto.reason : AUTO_LABEL[auto.kind]}
+            pre-approved · {autoLabel(auto)}
           </span>
         )}
         <span className="spacer" />
@@ -367,14 +463,18 @@ export function HunkCard({
         <>
       {note?.summary && (
         <div className="hunk-summary">
-          <Markdown text={note.summary} onCodeRef={onCodeRef} />
+          <RatedHint text={note.summary} verdict={wt?.verdict('note', path, note.summary)} onRate={(v) => wt?.rate('note', path, note.summary, v)}>
+            <Markdown text={note.summary} onCodeRef={onCodeRef} />
+          </RatedHint>
         </div>
       )}
       {note && note.notes.length > 0 && (
         <ul className="bullets hunk-notes small">
           {note.notes.map((n, i) => (
             <li key={i}>
-              <Markdown text={n} onCodeRef={onCodeRef} />
+              <RatedHint text={n} verdict={wt?.verdict('note', path, n)} onRate={(v) => wt?.rate('note', path, n, v)}>
+                <Markdown text={n} onCodeRef={onCodeRef} />
+              </RatedHint>
             </li>
           ))}
         </ul>
@@ -497,6 +597,7 @@ export function ReviewPanel({ flow, current, currentHunk }: { flow: ReviewFlow; 
                 onApproveNext={() => flow.onApproveNext(current.path, h)}
                 onComment={(body) => flow.onComment(current.path, h, body)}
                 onCodeRef={codeRef}
+                wt={wt}
               />
             ))}
           </ol>

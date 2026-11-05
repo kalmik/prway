@@ -3,13 +3,14 @@
 
 import { DiffEditor } from '@monaco-editor/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangedFile, DiffSide, DraftComment, FileDiff, GuideFile, Hunk, HunkAuto, ReviewThread, WorktreeInfo } from '../../../shared/types'
+import type { ChangedFile, DiffSide, DraftComment, FileDiff, GuideFile, HintVerdict, Hunk, HunkAuto, ReviewThread, WorktreeInfo } from '../../../shared/types'
 import { languageFor, monaco, MONO_FONT } from '../monaco'
 import { attachCodeNav, linesRef, type NavHandlers } from './codeNav'
 import { attachLineMenu, copyReference, LineMenu, type LineMenuAt } from './LineMenu'
 import { LineComments, useViewZones, type CommentActions, type ZoneSpec } from './Comments'
 import { Markdown } from './Markdown'
-import { AUTO_LABEL, hunkAnchor, hunkRange } from './ReviewPanel'
+import { autoLabel, hunkAnchor, hunkRange, Rate, RatedHint } from './ReviewPanel'
+import { storage } from '../util'
 
 type CodeEditor = monaco.editor.IStandaloneCodeEditor
 
@@ -34,8 +35,15 @@ export interface HunkMark {
   position: number
   total: number
   auto?: HunkAuto
-  /** The walkthrough's one-line summary of the chunk, if any. */
+  /** The walkthrough's note on the chunk, if any. */
   summary?: string
+  notes?: string[]
+  risk?: 'low' | 'medium' | 'high'
+  /** Chunks still waiting for you in this file (not pre-approved, not approved). */
+  left?: number
+  /** Your rating of a sentence of the note, and how to rate it. */
+  verdictOf?: (text: string) => HintVerdict | undefined
+  rate?: (text: string, verdict: HintVerdict | null) => void
 }
 
 /** Lines a chunk covers on the side it is shown on (removed-only chunks live on the left). */
@@ -45,30 +53,105 @@ function hunkSpan(h: Hunk): { side: DiffSide; start: number; end: number } {
     : { side: 'LEFT', start: h.oldStart, end: h.oldStart + Math.max(1, h.oldLines) - 1 }
 }
 
-/** The bar shown just above the current chunk, in the code. */
-function ChunkBanner({ mark, onApproveNext, onComment }: { mark: HunkMark; onApproveNext: () => void; onComment: () => void }) {
+/** First sentence of a note, as one plain line for the collapsed bar. */
+const firstLine = (text: string) => {
+  const plain = text.replace(/[`*_]/g, '').replace(/\s+/g, ' ').trim()
+  const m = /^(.{20,}?[.!?])\s/.exec(plain)
+  return m ? m[1] : plain
+}
+
+interface BannerProps {
+  mark: HunkMark
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onApproveNext: () => void
+  onToggleApprove: () => void
+  onComment: () => void
+  onMove?: (delta: 1 | -1) => void
+  onCodeRef: (path: string, line: number) => void
+}
+
+/** The bar shown just above the current chunk, in the code: what it is, its note (collapsed) and the actions. */
+function ChunkBanner({ mark, open, onOpenChange, onApproveNext, onToggleApprove, onComment, onMove, onCodeRef }: BannerProps) {
   const h = mark.hunk
+  const hasNote = !!mark.summary || !!mark.notes?.length
   return (
-    <div className={`chunk-banner ${mark.approved ? 'approved' : ''}`}>
-      <span className="chunk-banner-title">
-        ▶ Chunk {mark.position} of {mark.total}
-      </span>
-      <span className="muted">{hunkRange(h)}</span>
-      {h.header && <code>{h.header}</code>}
-      {mark.summary && <span className="chunk-banner-summary">{mark.summary}</span>}
-      <span className="spacer" />
-      {mark.auto ? (
-        <span className="auto-tag">pre-approved · {mark.auto.kind === 'ai' ? mark.auto.reason : AUTO_LABEL[mark.auto.kind]}</span>
-      ) : mark.approved ? (
-        <span className="ok">✓ approved</span>
-      ) : (
-        <button className="primary small" onClick={onApproveNext} title="Approve and go to the next chunk (a)">
-          Approve & next
-        </button>
+    <div className={`chunk-banner ${mark.approved ? 'approved' : ''} ${open ? 'open' : ''}`}>
+      <div className="chunk-banner-row">
+        {hasNote ? (
+          <button
+            className={`chunk-banner-chevron ${open ? 'open' : ''}`}
+            onClick={() => onOpenChange(!open)}
+            title={open ? 'Hide the note on this chunk' : 'Show the note on this chunk'}
+            aria-expanded={open}
+          >
+            ▶
+          </button>
+        ) : (
+          <span className="chunk-banner-chevron empty">▶</span>
+        )}
+        <span className="chunk-banner-title" title="Keys: j / k chunks · a approve & next · c comment · n / p files">
+          {mark.auto ? 'Pre-approved chunk' : `Chunk ${mark.position} of ${mark.total}`}
+        </span>
+        <span className="muted nowrap">{hunkRange(h)}</span>
+        {h.header && <code className="chunk-banner-fn">{h.header}</code>}
+        {mark.risk && mark.risk !== 'low' && <span className={`risk-tag risk-${mark.risk}`}>{mark.risk}</span>}
+        {hasNote && !open && (
+          <button className="link chunk-banner-summary" onClick={() => onOpenChange(true)} title="Show the note on this chunk">
+            {mark.summary ? firstLine(mark.summary) : 'Notes'}
+          </button>
+        )}
+        {/* Pushed right; on a narrow bar the note's first line wraps below everything else. */}
+        <span className="chunk-banner-actions">
+          {mark.left !== undefined && <span className="muted nowrap">{mark.left} left</span>}
+          {onMove && (
+            <>
+              <button className="icon" onClick={() => onMove(-1)} title="Previous chunk (k)">
+                ↑
+              </button>
+              <button className="icon" onClick={() => onMove(1)} title="Next chunk (j)">
+                ↓
+              </button>
+            </>
+          )}
+          {mark.auto ? (
+            <button className="auto-tag" onClick={onToggleApprove} title={`${mark.auto.reason}. Click to review it yourself.`}>
+              pre-approved · {autoLabel(mark.auto)} ✕
+            </button>
+          ) : mark.approved ? (
+            <button className="link ok nowrap" onClick={onToggleApprove} title="Approved by you. Click to undo.">
+              ✓ approved
+            </button>
+          ) : (
+            <button className="primary small nowrap" onClick={onApproveNext} title="Approve and go to the next chunk (a)">
+              Approve & next
+            </button>
+          )}
+          <button className="small" onClick={onComment} title="Comment on this chunk (c)">
+            Comment
+          </button>
+        </span>
+      </div>
+      {open && hasNote && (
+        <div className="chunk-banner-note">
+          {mark.summary && (
+            <RatedHint text={mark.summary} verdict={mark.verdictOf?.(mark.summary)} onRate={(v) => mark.rate?.(mark.summary!, v)}>
+              <Markdown text={mark.summary} onCodeRef={onCodeRef} />
+            </RatedHint>
+          )}
+          {!!mark.notes?.length && (
+            <ul className="bullets small">
+              {mark.notes.map((n, i) => (
+                <li key={i}>
+                  <RatedHint text={n} verdict={mark.verdictOf?.(n)} onRate={(v) => mark.rate?.(n, v)}>
+                    <Markdown text={n} onCodeRef={onCodeRef} />
+                  </RatedHint>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
-      <button className="small" onClick={onComment} title="Comment on this chunk (c)">
-        Comment
-      </button>
     </div>
   )
 }
@@ -90,6 +173,14 @@ interface Props {
   /** Clicking inside a chunk in the code makes it the current one. */
   onSelectHunk?: (h: Hunk) => void
   onApproveNext?: (h: Hunk) => void
+  onToggleApprove?: (h: Hunk) => void
+  /** Previous / next chunk from the bar above the current chunk (guided view). */
+  onMoveChunk?: (delta: 1 | -1) => void
+  /** Your rating of a guide focus note on this file, and how to rate it (👎 hides the focus line). */
+  focusVerdict?: (note: string) => HintVerdict | undefined
+  onRateFocus?: (note: string, verdict: HintVerdict | null) => void
+  /** Bumped by the "c" shortcut: opens a comment box on the current chunk. */
+  commentSignal?: number
   /** Opens the Threads tab (for threads that can't sit on a line). */
   onShowThreads?: () => void
   actions: Omit<CommentActions, 'onAddDraft' | 'onCancelCompose'> & {
@@ -108,6 +199,8 @@ const GUTTER = new Set<number>([
  * Guided, Files and Code views returns to the same place. Also the last reveal handled, so a remount doesn't replay it.
  */
 const scrollMemory = new Map<string, number>()
+/** Unchanged lines Monaco keeps visible above a change when folding (hideUnchangedRegions shows 2 of its 3). */
+const BANNER_CONTEXT = 2
 const handledReveal = new Map<string, number>()
 
 export function DiffPane(props: Props) {
@@ -122,6 +215,8 @@ export function DiffPane(props: Props) {
   const latest = useRef(props)
   latest.current = props
   const sideBySideRef = useRef(sideBySide)
+  /** Scrolls so the bar above the current chunk isn't cut off at the top (set further down). */
+  const showBanner = useRef<() => void>(() => undefined)
   sideBySideRef.current = sideBySide
 
   const commentable = useMemo(
@@ -167,6 +262,31 @@ export function DiffPane(props: Props) {
     return () => disposables.forEach((d) => d.dispose())
   }, [modified, original, commentable])
   useEffect(() => setLineMenu(null), [file.path])
+
+  /** The guide's focus notes on the clicked lines, each with 👍 / 👎. */
+  function focusHeader(m: LineMenuAt & { side: DiffSide }) {
+    if (m.side !== 'RIGHT' || !props.onRateFocus) return undefined
+    const notes = (guideFile?.focus ?? []).filter((f) => f.line >= m.start && f.line <= m.end)
+    if (!notes.length) return undefined
+    return (
+      <div className="line-menu-focus">
+        {notes.map((f) => (
+          <div key={f.line} className="line-menu-focus-note">
+            <span>
+              <strong>Focus{notes.length > 1 ? ` L${f.line}` : ''}:</strong> {f.note}
+            </span>
+            <Rate
+              verdict={latest.current.focusVerdict?.(f.note)}
+              onRate={(v) => {
+                latest.current.onRateFocus?.(f.note, v)
+                if (v === 'noise') setLineMenu(null)
+              }}
+            />
+          </div>
+        ))}
+      </div>
+    )
+  }
 
   function lineMenuItems(m: LineMenuAt & { side: DiffSide }) {
     const ed = m.side === 'LEFT' ? original : modified
@@ -237,7 +357,7 @@ export function DiffPane(props: Props) {
           isWholeLine: true,
           className: 'focus-line',
           glyphMarginClassName: 'focus-glyph',
-          hoverMessage: { value: `**Focus:** ${f.note}` }
+          hoverMessage: { value: `**Focus:** ${f.note}\n\n_Click the line number to rate this note._` }
         }
       })),
       ...moved(diff.moved.right),
@@ -338,6 +458,8 @@ export function DiffPane(props: Props) {
         handledReveal.set(`head/${tree.headSha}/${file.path}`, reveal.seq)
         ed.revealLineInCenter(reveal.line)
         ed.setPosition({ lineNumber: reveal.line, column: 1 })
+        // Revealing a line near the top can leave the bar above it cut off.
+        requestAnimationFrame(() => showBanner.current())
       })
     }
     if (de.getLineChanges()) {
@@ -399,29 +521,92 @@ export function DiffPane(props: Props) {
     })
   }
   const currentMark = hunkMarks?.find((m) => m.current)
+  // The chunk note stays collapsed until you open it; the choice carries over to the next chunks.
+  const [noteOpen, setNoteOpenState] = useState(() => storage.get('ui.chunkNoteOpen', false))
+  const setNoteOpen = (v: boolean) => {
+    setNoteOpenState(v)
+    storage.set('ui.chunkNoteOpen', v)
+  }
+  const commentOnChunk = (h: Hunk) => {
+    const a = hunkAnchor(h)
+    setComposing({ side: a.side === 'LEFT' && sideBySideRef.current ? 'LEFT' : 'RIGHT', line: a.side === 'LEFT' ? h.newStart : a.line })
+  }
+  // Only a new press of "c" opens the box, not the count left over from before.
+  const seenSignal = useRef(props.commentSignal ?? 0)
+  useEffect(() => {
+    const signal = props.commentSignal ?? 0
+    if (signal === seenSignal.current) return
+    seenSignal.current = signal
+    if (currentMark) commentOnChunk(currentMark.hunk)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.commentSignal])
+  // The bar sits above the chunk's first line; when it grows (note opened) Monaco keeps that line in place, so the
+  // bar grows upward and can end up above the view. Scroll just enough to show it, if the chunk itself is in view.
+  const bannerHash = currentMark?.hunk.hash
+  useEffect(() => {
+    if (!modified || !currentMark) return
+    const show = () => {
+      // The zone's position in the content (its first line may be folded away, so don't go by line numbers).
+      const host = modified.getDomNode()?.querySelector<HTMLElement>('.chunk-banner')?.closest<HTMLElement>('.zone-host')
+      if (!host) return
+      const top = parseFloat(host.style.top) || 0
+      const scrollTop = modified.getScrollTop()
+      // Cut off at the top but partly in view (or just above it): show all of it.
+      if (top < scrollTop && top + host.offsetHeight + 60 > scrollTop) modified.setScrollTop(Math.max(0, top - 4))
+    }
+    showBanner.current = show
+    // After the zone has its height and the diff has settled its scroll position.
+    const timers = [80, 300, 700].map((ms) => setTimeout(show, ms))
+    return () => timers.forEach(clearTimeout)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modified, noteOpen, bannerHash])
+  // The diff's changes, to place the bar: recomputed when Monaco finishes a diff.
+  const [diffVersion, setDiffVersion] = useState(0)
+  useEffect(() => {
+    const de = diffEditorRef.current
+    if (!de || !modified) return
+    const sub = de.onDidUpdateDiff(() => setDiffVersion((v) => v + 1))
+    return () => sub.dispose()
+  }, [modified])
+  /**
+   * The line the bar sits under. Folding unchanged regions hides the start of a chunk's context, and a zone under a
+   * hidden line ends up above the fold (off the top at the start of the file). So go by the chunk's first change:
+   * the bar sits right above the lines Monaco keeps visible before it.
+   */
+  const bannerLine = (h: Hunk): number => {
+    const fallback = Math.max(0, h.newStart - 1)
+    const end = h.newStart + Math.max(1, h.newLines)
+    const firstChange = (diffEditorRef.current?.getLineChanges() ?? [])
+      .map((c) => (c.modifiedEndLineNumber === 0 ? c.modifiedStartLineNumber + 1 : c.modifiedStartLineNumber))
+      .find((l) => l >= h.newStart && l <= end)
+    return firstChange === undefined ? fallback : Math.max(fallback, firstChange - BANNER_CONTEXT - 1)
+  }
   const bannerZone = (): ZoneSpec[] => {
     if (!currentMark) return []
     const h = currentMark.hunk
     return [
       {
         key: `chunk:${h.hash}:${currentMark.approved}:${currentMark.summary ?? ''}`,
+        wide: true,
         // Above the chunk, on the new side (inline view shows removed lines there too).
-        line: Math.max(0, h.newStart - 1),
+        line: bannerLine(h),
         node: (
           <ChunkBanner
             mark={currentMark}
+            open={noteOpen}
+            onOpenChange={setNoteOpen}
             onApproveNext={() => latest.current.onApproveNext?.(h)}
-            onComment={() => {
-              const a = hunkAnchor(h)
-              setComposing({ side: a.side === 'LEFT' && sideBySideRef.current ? 'LEFT' : 'RIGHT', line: a.side === 'LEFT' ? h.newStart : a.line })
-            }}
+            onToggleApprove={() => latest.current.onToggleApprove?.(h)}
+            onComment={() => commentOnChunk(h)}
+            onMove={props.onMoveChunk ? (d) => latest.current.onMoveChunk?.(d) : undefined}
+            onCodeRef={(p, l) => latest.current.actions.onCodeRef(p, l)}
           />
         )
       }
     ]
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const rightZones = useMemo(() => [...bannerZone(), ...zonesFor('RIGHT')], [threads, drafts, composing, tree.headSha, file.path, dark, currentMark])
+  const rightZones = useMemo(() => [...bannerZone(), ...zonesFor('RIGHT')], [threads, drafts, composing, tree.headSha, file.path, dark, currentMark, noteOpen, diffVersion])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const leftZones = useMemo(() => (sideBySide ? zonesFor('LEFT') : []), [threads, drafts, composing, tree.headSha, file.path, sideBySide, dark])
   useViewZones(modified, rightZones)
@@ -433,7 +618,7 @@ export function DiffPane(props: Props) {
 
   return (
     <div className="diff-pane">
-      {lineMenu && <LineMenu at={lineMenu} items={lineMenuItems(lineMenu)} onClose={closeLineMenu} />}
+      {lineMenu && <LineMenu at={lineMenu} items={lineMenuItems(lineMenu)} header={focusHeader(lineMenu)} onClose={closeLineMenu} />}
       {(detached.length > 0 || detachedDrafts.length > 0) && (
         <div className="detached small">
           {detached.length > 0 && (

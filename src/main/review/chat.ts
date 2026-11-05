@@ -1,5 +1,5 @@
 // Chat about a PR: the reviewer asks questions, the model answers with the diff, the guide and the
-// repository context in front of it.
+// repository context in front of it, and can read the rest of the code at the PR head (read-only tools).
 //
 // How follow-ups stay cheap:
 //   Claude Code   a real session per conversation: the first message sends the PR material, follow-ups resume
@@ -19,6 +19,13 @@ import { briefingPromptText, loadBriefing } from '../trace/briefing'
 import { systemPrompt } from './prompts'
 
 const MAX_TURNS = 20
+
+/** Always added to the chat's system prompt (it can be replaced in settings, the tools can't). */
+const CODE_ACCESS = `
+You can read the repository yourself, checked out at the PR head, with read-only tools (read files, search, list files). Paths are relative to the repository root.
+- When the question needs code that is not in the material above (a caller, a callee, a schema, a test, config), look it up instead of saying you can't see it.
+- Keep lookups few and targeted; answer as soon as you have what you need.
+- The checkout is the PR head. For the code before the PR, rely on the diffs and the BACKGROUND section.`
 
 const CHAT_SCHEMA = {
   type: 'object',
@@ -95,12 +102,15 @@ export async function chat(
   const head = deps.worktrees.headSha(pull.repo, pull.number)
   const background = briefingPromptText(head ? loadBriefing(pull.repo, pull.number, head) : null)
   const briefingText = background ? `\nBACKGROUND (how the changed code worked before this PR, traced by PRway):\n${background}` : ''
-  const system = systemPrompt('chat', pull.repo, deps.worktrees.rulesOrNull(pull.repo, pull.number)).system
+  const dir = deps.worktrees.worktreeDir(pull.repo, pull.number)
+  const code = existsSync(dir) ? { dir } : undefined
+  const system = systemPrompt('chat', pull.repo, deps.worktrees.rulesOrNull(pull.repo, pull.number)).system + (code ? CODE_ACCESS : '')
   // The stable part: the same for every question about this PR (until new commits or a new guide).
   const prefix = `${prompt}${guideText}${briefingText}\n\n`
   const base = {
     system,
     schema: CHAT_SCHEMA,
+    code,
     model: settings.model,
     // Chat should feel quick; the guide is where deep thinking goes.
     effort: settings.effort === 'max' || settings.effort === 'xhigh' ? ('high' as const) : settings.effort

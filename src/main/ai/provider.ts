@@ -19,6 +19,11 @@ export interface StructuredRequest {
    * earlier turns, so only `prompt` (the new turn) is sent and `prefix` is skipped.
    */
   session?: { id: string; resume: boolean }
+  /**
+   * Lets the model read the code itself (read-only): `dir` is the PR's checkout at its head. Claude Code uses its
+   * own Read/Grep/Glob tools there; the API gets PRway's read_file/grep/list_files tools.
+   */
+  code?: { dir: string }
   /** JSON Schema the answer must follow. */
   schema: Record<string, unknown>
   model: string

@@ -8,17 +8,21 @@ import type {
   DraftComment,
   FileDiff,
   Hunk,
+  HintVerdict,
   HunkAuto,
   GuideFile,
+  Briefing,
   PullDetail,
   ReviewGuide,
   ReviewThread,
   WorktreeInfo
 } from '../../../shared/types'
 import { errorText, storage, useStored } from '../util'
+import { coreHit, coreSpans } from '../core'
 import { ChatBar, ChatLog } from './ChatPanel'
 import type { NavRequest } from './codeNav'
-import { ContextPanel, type NavResults } from './ContextPanel'
+import { NavResultsPopup, type NavResults } from './NavResults'
+import { SummaryPanel } from './SummaryPanel'
 import { ConversationPanel } from './ConversationPanel'
 import { DiffPane, type HunkMark, type RevealRequest } from './DiffPane'
 import { ErrorBoundary } from './ErrorBoundary'
@@ -29,7 +33,7 @@ import { GuidePanel } from './GuidePanel'
 import { BackgroundPanel } from './BackgroundPanel'
 import { ReviewBox } from './ReviewBox'
 import { threadGroup, ThreadsPanel } from './ThreadsPanel'
-import { FileStep, FinishStep, OverviewStep, ReviewOutline, type Step } from './Guided'
+import { FileBrief, FinishStep, OverviewStep, ReviewOutline, type Step } from './Guided'
 import { approvalKey, hunkAnchor, ReviewPanel, useWalkthroughs, type ReviewFlow } from './ReviewPanel'
 
 const api = window.prway
@@ -37,7 +41,7 @@ const api = window.prway
 /** "Start review" prepares every file's walkthrough up to this many files; bigger PRs get a button. */
 const PREPARE_ALL_LIMIT = 15
 
-type Tab = 'review' | 'guide' | 'threads' | 'conversation' | 'context' | 'knowledge' | 'chat'
+type Tab = 'review' | 'summary' | 'guide' | 'knowledge' | 'threads' | 'conversation' | 'chat'
 
 /** Where the reviewer was, for the Back button after jumping to a definition. */
 interface Place {
@@ -112,6 +116,7 @@ export function PrView({
   const lastLine = useRef(1)
 
   const [guide, setGuide] = useState<ReviewGuide | null>(null)
+  const [briefing, setBriefing] = useState<Briefing | null>(null)
   const [guideBusy, setGuideBusy] = useState(false)
   const [guideError, setGuideError] = useState<string | null>(null)
 
@@ -124,6 +129,7 @@ export function PrView({
   const [seenThreads, setSeenThreads] = useStored<Record<string, number>>(`seenThreads:${prKey}`, {})
 
   const [nav, setNav] = useState<NavResults | null>(null)
+  const closeNav = useCallback(() => setNav(null), [])
   const [tab, setTab] = useStored<Tab>('ui.panelTab', 'guide')
   const [panelOpen, setPanelOpen] = useStored('ui.panelOpen', true)
   const [panelHeight, setPanelHeight] = useStored('ui.panelHeight', 300)
@@ -195,6 +201,7 @@ export function PrView({
             setTree(t)
             const saved = await api.guide.get(repo, number)
             setGuide(saved)
+            api.briefing.get(repo, number).then(setBriefing, () => setBriefing(null))
             // Stay on the file you were reading, else the first file of the reading order, else the first file that isn't noise.
             // A new object is set even for the same path so its diff is reloaded.
             const last = storage.get<string | null>(`file:${prKey}`, null)
@@ -270,10 +277,18 @@ export function PrView({
     reviewing && stepIndex >= 0 ? (steps.slice(stepIndex + 1).find((f) => hunks?.[f.path]?.length)?.path ?? null) : null,
     stepPaths
   )
+  // The guide's focus lines on the open file, minus the ones you marked as noise.
+  const shownGuideFile = useMemo(
+    () => guideFile && { ...guideFile, focus: guideFile.focus.filter((f) => wt.verdict('focus', guideFile.path, f.note) !== 'noise') },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [guideFile, wt.ratings]
+  )
 
   // Approvals = the chunks you ticked + the pre-approved ones (rules, AI) you didn't send back for review.
   const [preRules, setPreRules] = useStored('ui.preApproveRules', true)
   const [preAi, setPreAi] = useStored('ui.preApproveAi', true)
+  const [preBackground, setPreBackground] = useStored('ui.preApproveBackground', true)
+  const core = useMemo(() => coreSpans(briefing, guide, tree?.headSha ?? ''), [briefing, guide, tree?.headSha])
   const [manualList, setManualList] = useStored<string[]>(`approved:${prKey}`, [])
   const [overrideList, setOverrideList] = useStored<string[]>(`reviewAuto:${prKey}`, [])
   const manual = useMemo(() => new Set(manualList), [manualList])
@@ -283,15 +298,21 @@ export function PrView({
     for (const [p, hs] of Object.entries(hunks ?? {})) {
       for (const h of hs) {
         const key = approvalKey(p, h.hash)
-        if (preRules && h.auto) m.set(key, h.auto)
-        else if (preAi) {
-          const n = wt.walk[p]?.hunks.find((x) => x.hash === h.hash)
-          if (n?.trivial) m.set(key, { kind: 'ai', reason: n.trivialReason ? `AI: ${n.trivialReason}` : 'AI: trivial' })
+        if (preRules && h.auto) {
+          m.set(key, h.auto)
+          continue
         }
+        const n = wt.walk[p]?.hunks.find((x) => x.hash === h.hash)
+        // The core of the change (business rules, traced functions, watch-out lines) is never waved through.
+        const inCore = coreHit(core.spans, p, h, tree?.files.find((f) => f.path === p)?.oldPath)
+        if (inCore) continue
+        if (preAi && n?.trivial) m.set(key, { kind: 'ai', reason: n.trivialReason ? `AI: ${n.trivialReason}` : 'AI: trivial' })
+        else if (preBackground && core.fresh && n?.risk === 'low')
+          m.set(key, { kind: 'background', reason: 'Low risk, outside the core change (Background tab)' })
       }
     }
     return m
-  }, [hunks, wt.walk, preRules, preAi])
+  }, [hunks, wt.walk, preRules, preAi, preBackground, core, tree])
   const autoReasons = useMemo(() => new Map([...allAutoReasons].filter(([k]) => !overrides.has(k))), [allAutoReasons, overrides])
   const approved = useMemo(() => new Set([...manual, ...autoReasons.keys()]), [manual, autoReasons])
   const isAuto = (path: string, h: Hunk) => autoReasons.has(approvalKey(path, h.hash))
@@ -450,17 +471,17 @@ export function PrView({
     try {
       const locations = await api.code.definitions(repo, number, word, qualifier)
       setNav({ kind: 'def', word, locations })
-      if (locations.length === 1) openAt(locations[0].path, locations[0].line)
-      else showTab('context')
+      if (locations.length === 1) {
+        openAt(locations[0].path, locations[0].line)
+        setNav(null)
+      }
     } catch (err) {
       setNav({ kind: 'def', word, locations: [], error: errorText(err) })
-      showTab('context')
     }
   }
 
   async function findReferences({ word }: NavRequest) {
     setNav({ kind: 'refs', word, locations: null })
-    showTab('context')
     try {
       const r = await api.code.references(repo, number, word)
       setNav({ kind: 'refs', word, locations: r.locations, truncated: r.truncated })
@@ -601,16 +622,28 @@ export function PrView({
       fh.find((h) => currentHunk?.path === file.path && h.index === currentHunk.index) ??
       ((guided && step === 'files') || (tab === 'review' && panelOpen) ? fh.find((h) => !approved.has(approvalKey(file.path, h.hash))) : undefined)
     const w = wt.walk[file.path]
-    return fh.map((h, i) => ({
-      hunk: h,
-      approved: approved.has(approvalKey(file.path, h.hash)),
-      current: h === active,
-      position: i + 1,
-      total: fh.length,
-      auto: autoReasons.get(approvalKey(file.path, h.hash)),
-      summary: w?.hunks.find((x) => x.hash === h.hash)?.summary || undefined
-    }))
-  }, [file, hunks, approved, currentHunk, autoReasons, wt.walk, guided, step, tab, panelOpen])
+    // Counted over the chunks that need you: pre-approved ones are only there to spot-check.
+    const needs = fh.filter((h) => !autoReasons.has(approvalKey(file.path, h.hash)))
+    const left = needs.filter((h) => !approved.has(approvalKey(file.path, h.hash))).length
+    return fh.map((h) => {
+      const note = w?.hunks.find((x) => x.hash === h.hash) ?? w?.hunks[h.index]
+      return {
+        hunk: h,
+        approved: approved.has(approvalKey(file.path, h.hash)),
+        current: h === active,
+        position: needs.indexOf(h) + 1,
+        total: needs.length,
+        left,
+        auto: autoReasons.get(approvalKey(file.path, h.hash)),
+        summary: note?.summary || undefined,
+        notes: note?.notes,
+        risk: note?.risk,
+        verdictOf: (text: string) => wt.verdict('note', file.path, text),
+        rate: (text: string, v: HintVerdict | null) => wt.rate('note', file.path, text, v)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file, hunks, approved, currentHunk, autoReasons, wt.walk, wt.ratings, guided, step, tab, panelOpen])
 
   const flow: ReviewFlow = {
     steps,
@@ -675,7 +708,8 @@ export function PrView({
 
   // The guided view shows the review in the middle, so the Review tab is only for the Files view.
   const reviewTab = !guided && !codeView
-  const visibleTab: Tab = !reviewTab && tab === 'review' ? 'guide' : tab
+  // 'context' is a tab saved by older versions.
+  const visibleTab: Tab = (!reviewTab && tab === 'review') || (tab as string) === 'context' ? 'summary' : tab
 
   // Each panel tab keeps its own scroll position. Content that loads later (context, knowledge) is waited for briefly.
   const panelRef = useRef<HTMLDivElement>(null)
@@ -712,12 +746,12 @@ export function PrView({
         <div className="panel-tabs">
           {(
             [
+              ['summary', 'Summary'],
               ['review', `Review${hunks ? ` ${steps.filter((f) => (hunks[f.path] ?? []).length && hunks[f.path].every((h) => approved.has(approvalKey(f.path, h.hash)))).length}/${steps.length}` : ''}`],
               ['guide', `Guide${stale ? ' •' : ''}`],
+              ['knowledge', 'Background'],
               ['threads', `Threads${waitingForMe ? ` (${waitingForMe} for you)` : openThreads ? ` (${openThreads})` : ''}`],
               ['conversation', `Conversation${conversation && conversation.length > 1 ? ` (${conversation.length - 1})` : ''}`],
-              ['context', 'Context'],
-              ['knowledge', 'Background'],
               ['chat', `Chat${chatLog.length ? ` (${chatLog.filter((m) => m.role === 'user').length})` : ''}`]
             ] as [Tab, string][]
           )
@@ -803,17 +837,8 @@ export function PrView({
                 onOpenUrl={(u) => void api.openExternal(u)}
               />
             )}
-            {visibleTab === 'context' && (
-              <ContextPanel
-                repo={repo}
-                number={number}
-                path={outside ? null : (file?.path ?? null)}
-                headSha={tree.headSha}
-                nav={nav}
-                onClearNav={() => setNav(null)}
-                onOpen={(p, l) => openAt(p, l)}
-                onOpenUrl={(u) => void api.openExternal(u)}
-              />
+            {visibleTab === 'summary' && (
+              <SummaryPanel guide={guide} busy={guideBusy} onGenerate={() => void generateGuide()} onGoTo={(p, l) => openAt(p, l)} />
             )}
             {visibleTab === 'knowledge' && (
               <BackgroundPanel
@@ -825,6 +850,7 @@ export function PrView({
                 onGenerateGuide={() => void generateGuide()}
                 onOpen={(p, l, side) => openAt(p, l, side)}
                 onOpenUrl={(u) => void api.openExternal(u)}
+                onBriefing={setBriefing}
               />
             )}
             {visibleTab === 'chat' && (
@@ -924,6 +950,10 @@ export function PrView({
           {codeView ? null : guided ? (
             <ReviewOutline
               flow={flow}
+              onShowPreApproved={() => {
+                setMode('files')
+                setCodeView(false)
+              }}
               step={step}
               current={outside ? null : file}
               currentHunk={currentHunk && currentHunk.path === file?.path ? currentHunk.index : (activeHunk()?.index ?? null)}
@@ -968,6 +998,7 @@ export function PrView({
           )}
 
           <div className="center-col">
+            {nav && <NavResultsPopup nav={nav} onClose={closeNav} onOpen={(p, l) => openAt(p, l)} />}
             {codeView && (
               <CodeBrowser
                 repo={repo}
@@ -1004,7 +1035,7 @@ export function PrView({
                     pre: steps.reduce((n, f) => n + (hunks?.[f.path] ?? []).filter((h) => isAuto(f.path, h)).length, 0),
                     threads: openThreads
                   }}
-                  pre={{ rules: preRules, ai: preAi, setRules: setPreRules, setAi: setPreAi }}
+                  pre={{ rules: preRules, ai: preAi, background: preBackground, hasBriefing: core.fresh, setRules: setPreRules, setAi: setPreAi, setBackground: setPreBackground }}
                   wt={wt}
                   stepPaths={stepPaths}
                   repo={repo}
@@ -1026,6 +1057,10 @@ export function PrView({
               <div className="step-scroll">
                 <FinishStep
                   flow={flow}
+                  onShowPreApproved={() => {
+                    setMode('files')
+                    setCodeView(false)
+                  }}
                   pull={pull}
                   guide={guide}
                   drafts={drafts}
@@ -1073,6 +1108,11 @@ export function PrView({
               </span>
               {!outside && (
                 <>
+                  {guideFile && (
+                    <span className={`risk-tag risk-${guideFile.risk}`} title={`${guideFile.role}: ${guideFile.why}`}>
+                      {guideFile.risk} risk
+                    </span>
+                  )}
                   <label>
                     <input type="checkbox" checked={sideBySide} onChange={(e) => setSideBySide(e.target.checked)} /> Side by side
                   </label>
@@ -1088,12 +1128,13 @@ export function PrView({
             </div>
 
             {!outside && file?.noise && <div className="file-note noise-note small">Skippable: {file.noise.reason}</div>}
+            {guided && file && !outside && !file.noise && <FileBrief flow={flow} file={file} />}
             {!outside && guideFile && !guided && (
               <div className={`file-note small risk-${guideFile.risk}`}>
-                <strong>{guideFile.risk} risk</strong> · {guideFile.role} — {guideFile.why}
-                {guideFile.focus.length > 0 && (
+                <strong>{guideFile.role}</strong> — {guideFile.why}
+                {shownGuideFile!.focus.length > 0 && (
                   <span className="focus-links">
-                    {guideFile.focus.map((f) => (
+                    {shownGuideFile!.focus.map((f) => (
                       <button key={f.line} className="link" title={f.note} onClick={() => openAt(guideFile.path, f.line)}>
                         L{f.line}
                       </button>
@@ -1126,7 +1167,9 @@ export function PrView({
                       file={file}
                       diff={diff}
                       tree={tree}
-                      guideFile={guideFile}
+                      guideFile={shownGuideFile}
+                      focusVerdict={(note) => wt.verdict('focus', file.path, note)}
+                      onRateFocus={(note, v) => wt.rate('focus', file.path, note, v)}
                       threads={fileThreads}
                       drafts={fileDrafts}
                       sideBySide={sideBySide}
@@ -1139,22 +1182,15 @@ export function PrView({
                       onSelectHunk={(h) => setCurrentHunk({ path: file.path, index: h.index })}
                       onShowThreads={() => showTab('threads')}
                       onApproveNext={(h) => approveAndNext(file.path, h)}
+                      onToggleApprove={(h) => toggleApprove(file.path, h.hash)}
+                      onMoveChunk={guided ? moveChunk : undefined}
+                      commentSignal={commentSignal}
                     />
                   )}
                 </>
               )}
             </div>
             </div>
-            {guided && file && !outside && (
-              <FileStep
-                flow={flow}
-                file={file}
-                currentHunk={currentHunk && currentHunk.path === file.path ? currentHunk.index : null}
-                commentSignal={commentSignal}
-                onPrevChunk={() => moveChunk(-1)}
-                onNextChunk={() => moveChunk(1)}
-              />
-            )}
             </div>
             </>
             )}

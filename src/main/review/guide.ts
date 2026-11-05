@@ -13,6 +13,7 @@ import type { CodeNavigator } from '../code/navigator'
 import { kbPromptText, type KnowledgeBase } from '../kb/knowledge'
 import { dataDir } from '../store'
 import { buildPrompt, GUIDE_SCHEMA, normalizeFiles, type ModelGuide } from './guidePrompt'
+import { feedbackPromptText } from './feedback'
 import { systemPrompt } from './prompts'
 
 function guidePath(repo: string, number: number, headSha: string): string {
@@ -130,9 +131,11 @@ export async function generateGuide(deps: GuideDeps, pull: PullDetail, files: Ch
   const { review, prompt, truncatedFiles } = await prMaterial(deps, pull, files)
 
   const instructions = systemPrompt('guide', pull.repo, deps.worktrees.rulesOrNull(pull.repo, pull.number))
+  // Your ratings of earlier hints: the guide's focus lines should skip the same kinds of points.
+  const feedback = feedbackPromptText(pull.repo)
   const answer = await provider.generate<ModelGuide>({
     system: instructions.system,
-    prompt,
+    prompt: feedback ? `${prompt}\n\n${feedback}` : prompt,
     schema: GUIDE_SCHEMA as unknown as Record<string, unknown>,
     model: settings.model,
     effort: settings.effort

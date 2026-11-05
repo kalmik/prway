@@ -15,9 +15,12 @@ export interface ZoneSpec {
   /** The zone is shown under this line. */
   line: number
   node: ReactNode
+  /** As wide as the visible code (comment boxes stop at a readable width). */
+  wide?: boolean
 }
 
 interface LiveZone {
+  wide: boolean
   id: string
   line: number
   zone: monaco.editor.IViewZone
@@ -55,6 +58,7 @@ export function useViewZones(editor: CodeEditor | null, specs: ZoneSpec[]): void
         for (const ev of STOPPED_EVENTS) domNode.addEventListener(ev, (e) => e.stopPropagation())
         const zone: monaco.editor.IViewZone = { afterLineNumber: spec.line, heightInPx: 60, domNode }
         const z: LiveZone = {
+          wide: !!spec.wide,
           id: acc.addZone(zone),
           line: spec.line,
           zone,
@@ -67,7 +71,7 @@ export function useViewZones(editor: CodeEditor | null, specs: ZoneSpec[]): void
           })
         }
         z.observer.observe(inner)
-        fitWidth(editor, inner)
+        fitWidth(editor, inner, z.wide)
         live.set(spec.key, z)
       }
     })
@@ -77,7 +81,7 @@ export function useViewZones(editor: CodeEditor | null, specs: ZoneSpec[]): void
   // Keep zones as wide as the visible editor (they live in the scrolling content area).
   useEffect(() => {
     if (!editor) return
-    const d = editor.onDidLayoutChange(() => zones.current.forEach((z) => fitWidth(editor, z.zone.domNode.firstElementChild as HTMLElement)))
+    const d = editor.onDidLayoutChange(() => zones.current.forEach((z) => fitWidth(editor, z.zone.domNode.firstElementChild as HTMLElement, z.wide)))
     return () => d.dispose()
   }, [editor])
 
@@ -101,10 +105,10 @@ export function useViewZones(editor: CodeEditor | null, specs: ZoneSpec[]): void
   }, [editor])
 }
 
-function fitWidth(editor: CodeEditor, inner: HTMLElement | null): void {
+function fitWidth(editor: CodeEditor, inner: HTMLElement | null, wide = false): void {
   if (!inner) return
   const { contentWidth, verticalScrollbarWidth } = editor.getLayoutInfo()
-  inner.style.width = `${Math.max(240, Math.min(760, contentWidth - verticalScrollbarWidth - 16))}px`
+  inner.style.width = `${Math.max(240, Math.min(wide ? Infinity : 760, contentWidth - verticalScrollbarWidth - 16))}px`
 }
 
 // ---- Content of a zone ----

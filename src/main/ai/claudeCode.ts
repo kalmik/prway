@@ -1,6 +1,7 @@
 // Uses the Claude Code CLI you already have installed and signed in, so requests run on your
 // Claude subscription (Pro/Max) instead of an API key. Runs `claude -p` in headless mode with
-// every tool, MCP server and user setting turned off: it only reads the prompt and answers.
+// every MCP server and user setting turned off. Tools are off too, except read-only Read/Grep/Glob over the
+// PR's checkout when the request asks for code access (the chat).
 
 import { spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
@@ -46,17 +47,21 @@ export class ClaudeCodeProvider implements AiProvider {
       '--system-prompt', req.system,
       '--model', req.model,
       '--effort', req.effort,
-      '--tools', '',
+      // Code access: read-only tools, allowed only in the PR's checkout; anything else is denied, not asked.
+      ...(req.code
+        ? ['--tools', 'Read,Grep,Glob', '--add-dir', req.code.dir, '--permission-mode', 'dontAsk']
+        : ['--tools', '']),
       // A session (chat) is kept so follow-ups only send the new question; one-off requests leave nothing behind.
       ...(req.session ? (req.session.resume ? ['--resume', req.session.id] : ['--session-id', req.session.id]) : ['--no-session-persistence']),
       '--setting-sources', '',
       '--strict-mcp-config'
     ]
-    mkdirSync(dataDir, { recursive: true })
+    // Run from an empty folder so no project CLAUDE.md is picked up and the tools can't read PRway's own data.
+    const cwd = join(dataDir, 'claude-cwd')
+    mkdirSync(cwd, { recursive: true })
 
     return new Promise<T>((resolve, reject) => {
-      // Run from PRway's data folder so no project CLAUDE.md is picked up.
-      const child = spawn(this.command, args, { cwd: dataDir, env: claudeEnv(), stdio: ['pipe', 'pipe', 'pipe'] })
+      const child = spawn(this.command, args, { cwd, env: claudeEnv(), stdio: ['pipe', 'pipe', 'pipe'] })
       let stdout = ''
       let stderr = ''
       const timer = setTimeout(() => {

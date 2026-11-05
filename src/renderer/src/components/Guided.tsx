@@ -10,10 +10,9 @@ import { openSettings } from './SettingsDialog'
 import { Markdown } from './Markdown'
 import {
   approvalKey,
-  AUTO_LABEL,
   AutoExplain,
+  Elapsed,
   FileCard,
-  HunkCard,
   hunkRange,
   progressOf,
   type ReviewFlow,
@@ -33,7 +32,8 @@ export function ReviewOutline({
   commentCounts,
   drafts,
   onStep,
-  onOpenNoise
+  onOpenNoise,
+  onShowPreApproved
 }: {
   flow: ReviewFlow
   step: Step
@@ -44,9 +44,20 @@ export function ReviewOutline({
   drafts: number
   onStep: (s: Step) => void
   onOpenNoise: (f: ChangedFile) => void
+  /** Opens the Files view, where pre-approved chunks are listed. */
+  onShowPreApproved: () => void
 }) {
   const { steps, hunks, approved, guideFiles, wt } = flow
-  const { total, done, filesDone, fileDone } = progressOf(flow)
+  const { fileDone } = progressOf(flow)
+  // Only what needs you: pre-approved chunks are left out (the Files view has them), except the one you are on.
+  const isPre = (path: string, h: Hunk) => flow.autoReasons.has(approvalKey(path, h.hash))
+  const shown = (f: ChangedFile) =>
+    (hunks?.[f.path] ?? []).filter((h) => !isPre(f.path, h) || (step === 'files' && current?.path === f.path && currentHunk === h.index))
+  const files = steps.filter((f) => !(hunks?.[f.path] ?? []).length || shown(f).length || (step === 'files' && current?.path === f.path))
+  const total = steps.reduce((n, f) => n + (hunks?.[f.path] ?? []).filter((h) => !isPre(f.path, h)).length, 0)
+  const done = steps.reduce((n, f) => n + (hunks?.[f.path] ?? []).filter((h) => !isPre(f.path, h) && approved.has(approvalKey(f.path, h.hash))).length, 0)
+  const preCount = steps.reduce((n, f) => n + (hunks?.[f.path] ?? []).filter((h) => isPre(f.path, h)).length, 0)
+  const filesDone = files.filter((f) => fileDone(f.path)).length
   const [open, setOpen] = useState<Set<string>>(new Set())
   const [showNoise, setShowNoise] = useState(false)
 
@@ -61,7 +72,7 @@ export function ReviewOutline({
       <div className="outline-progress small">
         <div className="row">
           <span className="spacer">
-            <strong>{done}</strong>/{total} chunks · {filesDone}/{steps.length} files
+            <strong>{done}</strong>/{total} chunks · {filesDone}/{files.length} files
           </span>
         </div>
         <div className="progress">
@@ -74,10 +85,9 @@ export function ReviewOutline({
       </button>
 
       <ol className="outline-files">
-        {steps.map((f, i) => {
-          const fh = hunks?.[f.path] ?? []
+        {files.map((f, i) => {
+          const fh = shown(f)
           const ok = fh.filter((h) => approved.has(approvalKey(f.path, h.hash))).length
-          const autoCount = fh.filter((h) => flow.autoReasons.has(approvalKey(f.path, h.hash))).length
           const isCurrent = step === 'files' && current?.path === f.path
           const expanded = isCurrent || open.has(f.path)
           const g = guideFiles.get(f.path)
@@ -97,7 +107,7 @@ export function ReviewOutline({
                   {g && <span className={`risk-dot risk-${g.risk}`} title={`${g.risk} risk`} />}
                   <span className="file-name">{f.path.split('/').pop()}</span>
                   {!!commentCounts.get(f.path) && <span className="comment-count">{commentCounts.get(f.path)}</span>}
-                  <span className="outline-count" title={autoCount ? `${autoCount} pre-approved` : undefined}>
+                  <span className="outline-count">
                     {ok}/{fh.length}
                   </span>
                 </button>
@@ -137,6 +147,11 @@ export function ReviewOutline({
           )
         })}
       </ol>
+      {preCount > 0 && (
+        <button className="outline-pre small muted" onClick={onShowPreApproved} title="Pre-approved chunks are listed in the Files view">
+          {preCount} pre-approved chunk{preCount > 1 ? 's' : ''} hidden · see them in Files
+        </button>
+      )}
 
       {noise.length > 0 && (
         <>
@@ -188,7 +203,15 @@ export function OverviewStep({
   busy: boolean
   error: string | null
   stats: { files: number; noise: number; chunks: number; pre: number; threads: number }
-  pre: { rules: boolean; ai: boolean; setRules: (v: boolean) => void; setAi: (v: boolean) => void }
+  pre: {
+    rules: boolean
+    ai: boolean
+    background: boolean
+    hasBriefing: boolean
+    setRules: (v: boolean) => void
+    setAi: (v: boolean) => void
+    setBackground: (v: boolean) => void
+  }
   wt: Walkthroughs
   stepPaths: string[]
   onGenerate: () => void
@@ -220,6 +243,10 @@ export function OverviewStep({
         <label title="Only low-risk chunks the AI marks trivial, e.g. log wording or a local rename. Needs the file explained.">
           <input type="checkbox" checked={pre.ai} onChange={(e) => pre.setAi(e.target.checked)} /> Also trust the AI's “trivial” verdicts
           (low-risk only)
+        </label>
+        <label title="Chunks the file walkthrough rates low risk that touch none of the traced core functions, business rules or watch-out lines. The core itself is never pre-approved by the AI.">
+          <input type="checkbox" checked={pre.background} onChange={(e) => pre.setBackground(e.target.checked)} /> Pre-approve low-risk chunks
+          outside the core change{!pre.hasBriefing && <span className="muted"> (build the Background tab first)</span>}
         </label>
         <span className="muted">
           Review instructions for this repository:{' '}
@@ -255,93 +282,72 @@ export function OverviewStep({
 
 // ---- File step: the current chunk, above the diff ----
 
-export function FileStep({
-  flow,
-  file,
-  currentHunk,
-  commentSignal,
-  onPrevChunk,
-  onNextChunk
-}: {
-  flow: ReviewFlow
-  file: ChangedFile
-  currentHunk: number | null
-  commentSignal: number
-  onPrevChunk: () => void
-  onNextChunk: () => void
-}) {
-  const { steps, hunks, approved, guideFiles, wt } = flow
-  const [cardOpen, setCardOpenState] = useState(() => storage.get('ui.fileCardOpen', true))
-  const setCardOpen = (v: boolean) => {
-    setCardOpenState(v)
-    storage.set('ui.fileCardOpen', v)
+/**
+ * What the open file is about, under its name in the guided view: one line from the guide (its role and why it
+ * matters) with the walkthrough's summary, checks and related code a click away. Chunk notes live in the diff.
+ */
+export function FileBrief({ flow, file }: { flow: ReviewFlow; file: ChangedFile }) {
+  const { steps, hunks, guideFiles, wt } = flow
+  const [open, setOpenState] = useState(() => storage.get('ui.fileBriefOpen', false))
+  const setOpen = (v: boolean) => {
+    setOpenState(v)
+    storage.set('ui.fileBriefOpen', v)
   }
   const index = steps.findIndex((f) => f.path === file.path)
-  const fh = hunks?.[file.path] ?? []
-  const hunk: Hunk | undefined =
-    fh.find((h) => h.index === currentHunk) ?? fh.find((h) => !approved.has(approvalKey(file.path, h.hash))) ?? fh[0]
-  const w = wt.walk[file.path]
   const g = guideFiles.get(file.path)
-  const position = hunk ? fh.indexOf(hunk) + 1 : 0
+  const w = wt.walk[file.path]
+  const busy = wt.busy === file.path
+  const checks = w?.hints.length ?? 0
+  const noChunks = !!hunks && !(hunks[file.path] ?? []).length
 
   return (
-    <div className="file-step">
-      <div className="file-step-head">
-        <span className="small muted">{index >= 0 ? `File ${index + 1} of ${steps.length}` : 'Noise file'}</span>
-        <code className="file-card-path spacer">{file.path}</code>
-        {g && <span className={`risk-tag risk-${g.risk}`}>{g.risk} risk</span>}
-        <button className="link small" onClick={() => setCardOpen(!cardOpen)}>
-          {cardOpen ? 'Hide summary' : 'Show summary'}
-        </button>
+    <div className={`file-brief ${g ? `risk-${g.risk}` : ''}`}>
+      <div className="file-brief-row small">
+        {index >= 0 && (
+          <span className="muted nowrap">
+            File {index + 1} of {steps.length}
+          </span>
+        )}
+        <span className="file-brief-why" title={g ? `${g.role}: ${g.why}` : undefined}>
+          {g ? (
+            <>
+              <strong>{g.role}</strong>: {g.why}
+            </>
+          ) : (
+            <span className="muted">Not in the guide.</span>
+          )}
+        </span>
+        {busy && (
+          <span className="muted nowrap">
+            Claude is reading this file… <Elapsed />
+          </span>
+        )}
+        {!busy && wt.error && (
+          <span className="error">
+            {wt.error}{' '}
+            <button className="link" onClick={() => wt.explain(file.path, false)}>
+              retry
+            </button>
+          </span>
+        )}
+        {!busy && !wt.error && !w && (
+          <button className="link nowrap" onClick={() => wt.explain(file.path, false)} title="A summary, things to check and a note per chunk">
+            Explain this file
+          </button>
+        )}
+        {w && (
+          <button className="link nowrap" onClick={() => setOpen(!open)}>
+            {open ? '▾ less' : `▸ summary${checks ? ` · ${checks} to check` : ''}`}
+          </button>
+        )}
       </div>
-      {cardOpen && index >= 0 && (
-        <FileCard bare file={file} guideFile={g} wt={wt} onOpen={flow.onOpen} onOpenUrl={flow.onOpenUrl} />
+      {noChunks && <p className="small muted">No text changes to approve in this file (binary or renamed only).</p>}
+      {open && w && (
+        <div className="file-brief-body">
+          <FileCard brief file={file} guideFile={g} wt={wt} onOpen={flow.onOpen} onOpenUrl={flow.onOpenUrl} />
+          <AutoExplain wt={wt} />
+        </div>
       )}
-      {file.noise && <p className="small muted">Skipped as noise: {file.noise.reason}</p>}
-
-      {hunk && (
-        <>
-          <div className="chunk-nav small">
-            <strong>
-              Chunk {position} of {fh.length}
-            </strong>
-            <span className="muted">
-              {fh.filter((h) => !approved.has(approvalKey(file.path, h.hash))).length} left for you
-              {fh.some((h) => flow.autoReasons.has(approvalKey(file.path, h.hash))) &&
-                ` · ${fh.filter((h) => flow.autoReasons.has(approvalKey(file.path, h.hash))).length} pre-approved`}
-            </span>
-            <span className="spacer" />
-            <button className="icon" onClick={onPrevChunk} title="Previous chunk (k)">
-              ↑ k
-            </button>
-            <button className="icon" onClick={onNextChunk} title="Next chunk (j)">
-              ↓ j
-            </button>
-            <span className="muted keys" title="a: approve & next · c: comment · n / p: next / previous file">
-              a approve · c comment · n/p file
-            </span>
-          </div>
-          <ol className="hunk-list single">
-            <HunkCard
-              key={hunk.hash + hunk.index}
-              path={file.path}
-              hunk={hunk}
-              note={w?.hunks.find((x) => x.hash === hunk.hash) ?? w?.hunks[hunk.index]}
-              approved={approved.has(approvalKey(file.path, hunk.hash))}
-              auto={flow.autoReasons.get(approvalKey(file.path, hunk.hash))}
-              current
-              commentSignal={commentSignal}
-              onToggle={() => flow.onToggleApprove(file.path, hunk.hash)}
-              onShow={() => flow.onShowHunk(file.path, hunk)}
-              onApproveNext={() => flow.onApproveNext(file.path, hunk)}
-              onComment={(body) => flow.onComment(file.path, hunk, body)}
-              onCodeRef={(p, l) => flow.onOpen(p, l)}
-            />
-          </ol>
-        </>
-      )}
-      {hunks && !fh.length && !file.noise && <p className="small muted">No text changes to approve in this file (binary or renamed only).</p>}
-      {index === 0 && <AutoExplain wt={wt} />}
     </div>
   )
 }
@@ -356,7 +362,8 @@ export function FinishStep({
   threads,
   reviewBox,
   onDeleteDraft,
-  onGoTo
+  onGoTo,
+  onShowPreApproved
 }: {
   flow: ReviewFlow
   pull: PullDetail | null
@@ -366,9 +373,11 @@ export function FinishStep({
   reviewBox: ReactNode
   onDeleteDraft: (id: string) => void
   onGoTo: (path: string, line: number | null, side?: 'LEFT' | 'RIGHT') => void
+  onShowPreApproved: () => void
 }) {
   const { steps, hunks, approved } = flow
   const { total, done, filesDone } = progressOf(flow)
+  const pre = steps.reduce((n, f) => n + (hunks?.[f.path] ?? []).filter((h) => flow.autoReasons.has(approvalKey(f.path, h.hash))).length, 0)
   const left = steps.flatMap((f) => (hunks?.[f.path] ?? []).filter((h) => !approved.has(approvalKey(f.path, h.hash))).map((h) => ({ f, h })))
   const open = threads.filter((t) => !t.resolved)
 
@@ -402,35 +411,13 @@ export function FinishStep({
             </section>
           )}
 
-          {flow.autoReasons.size > 0 && (
-            <section>
-              <details>
-                <summary>
-                  <strong>Pre-approved without you ({[...flow.autoReasons.keys()].filter((k) => steps.some((f) => k.startsWith(f.path + '#'))).length})</strong>{' '}
-                  <span className="small muted">— spot-check or untick to review</span>
-                </summary>
-                <ul className="finish-list">
-                  {steps.flatMap((f) =>
-                    (hunks?.[f.path] ?? [])
-                      .filter((h) => flow.autoReasons.has(approvalKey(f.path, h.hash)))
-                      .map((h) => {
-                        const a = flow.autoReasons.get(approvalKey(f.path, h.hash))!
-                        return (
-                          <li key={f.path + h.hash}>
-                            <button className="link" onClick={() => flow.onShowHunk(f.path, h)}>
-                              {f.path.split('/').pop()} {hunkRange(h)}
-                            </button>
-                            <span className="small muted">{a.kind === 'ai' ? a.reason : AUTO_LABEL[a.kind]}</span>
-                            <button className="link small" onClick={() => flow.onToggleApprove(f.path, h.hash)}>
-                              review it myself
-                            </button>
-                          </li>
-                        )
-                      })
-                  )}
-                </ul>
-              </details>
-            </section>
+          {pre > 0 && (
+            <p className="small muted">
+              {pre} chunk{pre > 1 ? 's were' : ' was'} pre-approved without you ·{' '}
+              <button className="link" onClick={onShowPreApproved}>
+                spot-check them in Files
+              </button>
+            </p>
           )}
 
           <section>

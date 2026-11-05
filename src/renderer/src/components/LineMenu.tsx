@@ -1,6 +1,6 @@
 // The menu that opens when you click a line number (or drag over several): comment, ask in chat, copy a reference…
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { monaco } from '../monaco'
 import { selectedLines } from './codeNav'
 
@@ -49,7 +49,18 @@ export function attachLineMenu(editor: monaco.editor.ICodeEditor, open: (at: Lin
   return { dispose: () => subs.forEach((d) => d.dispose()) }
 }
 
-export function LineMenu({ at, items, onClose }: { at: LineMenuAt; items: LineMenuItem[]; onClose: () => void }) {
+export function LineMenu({
+  at,
+  items,
+  header,
+  onClose
+}: {
+  at: LineMenuAt
+  items: LineMenuItem[]
+  /** Shown above the actions (e.g. the guide's focus note on this line, with rating buttons). */
+  header?: ReactNode
+  onClose: () => void
+}) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ left: at.x + 6, top: at.y + 6 })
   // Keep it on screen: flip above the click near the bottom, shift left near the right edge.
@@ -88,6 +99,7 @@ export function LineMenu({ at, items, onClose }: { at: LineMenuAt; items: LineMe
   return (
     <div className="line-menu" ref={ref} style={pos} role="menu">
       <div className="line-menu-title">{lines}</div>
+      {header}
       {items.map((item) => (
         <button
           key={item.label}

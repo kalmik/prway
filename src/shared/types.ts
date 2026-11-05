@@ -226,7 +226,8 @@ export interface Briefing {
 
 /** Why PRway pre-approved a hunk without asking you. */
 export interface HunkAuto {
-  kind: 'imports' | 'comments' | 'blank' | 'formatting' | 'moved' | 'ai'
+  /** 'background': low risk and outside the core change the Background tab traced. */
+  kind: 'imports' | 'comments' | 'blank' | 'formatting' | 'moved' | 'ai' | 'background'
   reason: string
 }
 
@@ -266,6 +267,22 @@ export interface FileWalkthrough {
   }[]
   model: string
   createdAt: string
+}
+
+// ---- Your feedback on AI hints (per repository) ----
+
+export type HintVerdict = 'useful' | 'noise'
+
+/** Your rating of one AI hint: a file's "Check" item, a chunk's note or a guide focus line. Fed back into later AI requests. */
+export interface HintFeedback {
+  /** `<kind>|<path>|<text>`: rating the same hint again replaces the old rating. */
+  id: string
+  kind: 'check' | 'note' | 'focus'
+  pr: number
+  path: string
+  text: string
+  verdict: HintVerdict
+  at: string
 }
 
 // ---- Prompt customisation (per repository) ----
@@ -593,6 +610,12 @@ export interface PrwayApi {
     walkthrough(repo: string, number: number, path: string, regenerate?: boolean): Promise<FileWalkthrough>
     /** Makes the missing walkthroughs for these files in the background (2 at a time); resolves when done. */
     prepareAll(repo: string, number: number, paths: string[]): Promise<number>
+  }
+  feedback: {
+    /** Your ratings of AI hints in this repository. */
+    list(repo: string): Promise<HintFeedback[]>
+    /** Rates a hint (`verdict` null removes the rating); returns the updated list. */
+    rate(repo: string, hint: Omit<HintFeedback, 'id' | 'at' | 'verdict'> & { verdict: HintVerdict | null }): Promise<HintFeedback[]>
   }
   chat: {
     /** Asks a question about the PR. The diff, guide and context are sent along with the conversation. */

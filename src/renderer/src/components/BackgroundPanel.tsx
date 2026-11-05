@@ -5,7 +5,6 @@
 import { useEffect, useState } from 'react'
 import type { Briefing, BriefingClaim, BriefingCite, BriefingConcept, FunctionCard, ReviewGuide, TraceNode, TraceRole } from '../../../shared/types'
 import { errorText, timeAgo } from '../util'
-import { KnowledgePanel } from './KnowledgePanel'
 
 const api = window.prway
 
@@ -27,7 +26,7 @@ const KIND_LABEL: Record<BriefingConcept['kind'], string> = {
 
 const fileName = (p: string) => p.split('/').pop() ?? p
 
-type OpenAt = (path: string, line: number, side: 'LEFT' | 'RIGHT') => void
+type OpenAt = (path: string, line: number | null, side: 'LEFT' | 'RIGHT') => void
 
 export function BackgroundPanel({
   repo,
@@ -37,7 +36,8 @@ export function BackgroundPanel({
   guideBusy,
   onGenerateGuide,
   onOpen,
-  onOpenUrl
+  onOpenUrl,
+  onBriefing
 }: {
   repo: string
   number: number
@@ -47,6 +47,8 @@ export function BackgroundPanel({
   onGenerateGuide: () => void
   onOpen: OpenAt
   onOpenUrl: (url: string) => void
+  /** A new briefing was built: pre-approval uses it. */
+  onBriefing?: (b: Briefing) => void
 }) {
   const [briefing, setBriefing] = useState<Briefing | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -85,7 +87,9 @@ export function BackgroundPanel({
     setStep('Starting')
     setStarted(Date.now())
     try {
-      setBriefing(await api.briefing.generate(repo, number))
+      const b = await api.briefing.generate(repo, number)
+      setBriefing(b)
+      onBriefing?.(b)
     } catch (err) {
       setError(errorText(err))
     } finally {
@@ -161,16 +165,6 @@ export function BackgroundPanel({
         <ConceptView key={i} concept={c} cards={briefing.cards} onOpen={onOpen} onOpenUrl={onOpenUrl} onSaveCard={saveCard} />
       ))}
 
-      <details className="bg-kb small">
-        <summary>Earlier PRs you reviewed in PRway on these files</summary>
-        <KnowledgePanel
-          repo={repo}
-          number={number}
-          headSha={headSha}
-          onOpen={(p, l) => onOpen(p, l ?? 1, 'RIGHT')}
-          onOpenUrl={onOpenUrl}
-        />
-      </details>
     </div>
   )
 }

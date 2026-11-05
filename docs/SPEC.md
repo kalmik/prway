@@ -91,7 +91,7 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 
 **Milestone 3 — review in depth**
 - Layout: collapsible PR list; open PRs as tabs (kept loaded, so each keeps its scroll, drafts and panel; up to 10);
-  the diff takes the middle, with a resizable panel (Guide · Context · Background · Chat) below it or on the right,
+  the diff takes the middle, with a resizable panel (Summary · Guide · Background · Threads · Conversation · Chat) below it or on the right,
   and an "Ask about this PR" prompt under it.
 - Inline review comments:
   - GitHub threads show under their lines (GraphQL, with resolved/outdated state); reply, resolve, unresolve.
@@ -109,9 +109,15 @@ mechanical edits, checking the change against the stated intent, and a knowledge
   - `formatting-only` beyond whitespace: both versions have the same code tokens (line wrapping; for JS-like files also
     quote style, semicolons, trailing commas). Skipped for whitespace-sensitive languages.
   - per-repo rules in `.prway.json` (`skip`, `review`, `domains`), read from the PR base so a PR can't change its own rules
-- Context panel, per changed function: history from `git log -L` (missing blobs fetched in one batch), the PR each
-  commit came from with that PR's review comments on the file, callers, and tests. A compact version (call sites,
-  tests, recent commits) goes into the AI guide prompt.
+- Repository context per changed function (call sites, tests, recent commits) goes into the AI guide prompt. The
+  Context tab that showed it per function was removed: the Background tab covers it (history, callers, tests per
+  concept). Go to definition (several matches) and find references open a panel floating over the code.
+- Summary tab (first): what changed, the business rules changed (before → after) and changes the intent doesn't
+  explain, from the guide
+- Guided view shows only what needs you: pre-approved chunks, and files with nothing left, are left out of the outline,
+  the counts and the Finish page (a link opens the Files view, where they are listed with their reason)
+- Guide tab: only the intent (and where it came from) and the reading order. Business rule changes and changes the
+  intent doesn't explain are in the Summary tab; questions for the author show on the Finish step
 - Background tab ("before this PR"), built on demand (`src/main/trace/`):
   1. classify: the guide names 1-4 core concepts (features or business rules) with the functions where each lives
      (`concepts` in `GUIDE_SCHEMA`); no extra AI call
@@ -131,9 +137,12 @@ mechanical edits, checking the change against the stated intent, and a knowledge
   - progress shows in the panel (tracing, then the model call, with a timer); a warm rebuild of #7612 took 4s of
     tracing + ~75s for the model
   - the briefing also goes into the chat prompt
+  - pre-approval uses it (`src/renderer/src/core.ts`): chunks touching the core (business rule lines, traced
+    functions of the current head, test files that call them, watch-out lines) are never pre-approved from an AI
+    "trivial" verdict; with "Pre-approve low-risk chunks outside the core change" on, chunks the file walkthrough rates
+    low risk and that touch none of it are pre-approved ("outside the core change"). On #7612: 134 → 103 chunks to review
 - Knowledge base: when a PR you opened in PRway is merged, its intent, business rules, review decisions and changed
-  functions are saved; entries about the same files or functions show at the bottom of the Background tab and go into
-  the guide prompt.
+  functions are saved; entries about the same files or functions go into the guide prompt (no longer shown in the UI).
 - Chat about the PR (same provider and prompt material as the guide). Follow-ups are cheap:
   - Claude Code: one session per conversation (`--session-id`, then `--resume`), so a follow-up sends only the new
     question; the session is restarted when the conversation, the PR material or the instructions change
@@ -143,6 +152,13 @@ mechanical edits, checking the change against the stated intent, and a knowledge
   - ask about specific lines: click a line number (drag for several) in the diff or the Code view and pick Ask in
     Chat in the line menu, or select code and press ⌘L. They are attached to the next question as chips (click to
     jump, × to remove) and sent with line numbers and the version (base or head)
+  - reads the code itself: read-only tools over the PR's checkout (head), so it can look up callers, schemas, tests
+    and config that aren't in the prompt
+    - Claude Code: its own Read/Grep/Glob, `--add-dir <worktree>`, `--permission-mode dontAsk` (anything outside
+      the checkout is denied), run from an empty `~/.prway/claude-cwd`
+    - Anthropic API: PRway's `read_file`/`grep`/`list_files` tools (`src/main/ai/codeTools.ts`, paths kept inside
+      the checkout, no `.git`), at most 12 tool rounds per answer
+    - the base version is not readable; the diffs and the Background cover it
 - Line menu: clicking a line number opens a small menu: Comment (diff, on lines GitHub accepts), Ask in Chat, View
   diff (Code view, changed lines) and Copy reference (`path:12-15`)
 
@@ -151,10 +167,25 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 - Left: an outline — Overview, the files in the guide's reading order with their chunks (diff hunks), skipped noise
   files, Finish & submit — with chunk and file progress.
 - Overview step: the review plan (files, chunks, noise, open threads) and the AI guide, then "Start review".
-- File step: the file's walkthrough beside the diff — summary, things to check, related code (opens any file at the line,
-  in the diff or read-only) — and the current chunk with its summary, notes and risk. Approve chunks locally
-  ("Approve & next"), comment on a chunk (becomes a pending inline comment). Keys: j/k chunks, a approve & next,
-  c comment, n/p files.
+- File walkthroughs see the whole functions around each chunk at the PR head (up to 200 lines each, 60k characters
+  per file), not just the diff's 3 lines of context, plus the Background briefing when built. Saved under `files-v3`
+  (older walkthroughs that only saw the diff context are not reused)
+- File step: no side panel, everything sits on the diff:
+  - the file bar shows the guide's risk badge next to "Side by side"
+  - under it, one line from the guide (the file's role and why it matters); "▸ summary · N to check" opens the
+    walkthrough's summary, things to check and related code (opens any file at the line, in the diff or read-only)
+  - the bar above the current chunk, in the code (as wide as the code, right above the chunk's first visible line,
+    below any fold): a chevron on the left opens/closes the chunk's note (remembered), then chunk N of the ones that
+    need you, range, function, risk, the first sentence of the note (on its own line when the bar is narrow), chunks left, ↑/↓, Approve & next (or ✓ approved / pre-approved, click to undo) and Comment (becomes
+    a pending inline comment)
+  - keys: j/k chunks, a approve & next, c comment, n/p files
+- Feedback on AI hints: 👍 / 👎 on every Check item and chunk note (on hover), and on the guide's focus lines in the
+  diff (click the line number: the focus note is at the top of the line menu; 👎 removes that line's highlight and
+  its focus link). Saved per repository in
+  `~/.prway/feedback/<owner>/<repo>.json` (last 500). The last 30 "not useful" and 10 "useful" go into every new
+  walkthrough and guide prompt as examples: points like the noise ones are left out, and a low-risk chunk with
+  nothing else to say is marked trivial, so it gets pre-approved. A 👎 dims the hint right away; saved walkthroughs
+  aren't redone (regenerate a file to apply new ratings to it)
 - Walkthroughs are made per file on demand (and the next file in the background), with a capped effort for speed, and
   saved per head commit in `~/.prway/guides/.../files/<sha>/`. References to files that don't exist are dropped.
 - Approvals are keyed by the hunk's changed lines, so they survive new commits that don't touch that hunk; a file
@@ -220,7 +251,7 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 │ code/     outlines, definitions, callers, history      │       │          + bottom panel  │
 │ review/   noise filter, guide prompt + schema,         │       │ DiffPane Monaco diff,    │
 │           guide generation and storage, chat           │       │          comment zones   │
-│ kb/       knowledge base of merged PRs                 │       │ Context, Background, Chat│
+│ kb/       knowledge base of merged PRs                 │       │ Summary, Background, Chat│
 │ ai/       AiProvider: Claude Code CLI, Anthropic API   │       └──────────────────────────┘
 │ store     settings.json + secrets via safeStorage      │        preload exposes window.prway
 └────────────────────────────────────────────────────────┘        (no Node in the renderer)

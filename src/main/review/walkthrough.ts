@@ -11,6 +11,8 @@ import { outline, symbolAt } from '../code/symbols'
 import { catFiles, git, type WorktreeManager } from '../git/worktrees'
 import { dataDir } from '../store'
 import { loadGuide } from './guide'
+import { feedbackPromptText } from './feedback'
+import { briefingPromptText, loadBriefing } from '../trace/briefing'
 import { triageHunk } from './triage'
 import { BUILT_IN, systemPrompt } from './prompts'
 import {
@@ -22,6 +24,9 @@ import {
   type ModelWalkthrough
 } from './walkthroughPrompt'
 
+const MAX_FUNCTION_LINES = 200
+const MAX_FUNCTION_CHARS = 60_000
+
 const EFFORT_CAP = { low: 'low', medium: 'medium', high: 'medium', xhigh: 'medium', max: 'medium' } as const
 
 /** Saved per head commit and per set of instructions: changing a repo's prompts gives fresh walkthroughs. */
@@ -30,7 +35,8 @@ function cachePath(repo: string, number: number, headSha: string, path: string, 
   const key = instructions.system === BUILT_IN.walkthrough ? path : `${instructions.hash}:${path}`
   const id = createHash('sha1').update(key).digest('hex').slice(0, 16)
   // "v2": behaviour-only explanations with trivial verdicts; older, wordier walkthroughs are not reused.
-  return join(dataDir, 'guides', repo, `pr-${number}`, 'files-v2', headSha, `${id}.json`)
+  // "v3": the prompt has the whole functions around the hunks (v2 only saw 3 lines of context).
+  return join(dataDir, 'guides', repo, `pr-${number}`, 'files-v3', headSha, `${id}.json`)
 }
 
 export class Walkthroughs {
@@ -130,7 +136,11 @@ export class Walkthroughs {
     if (!hunks.length) throw new Error('This file has no text changes to walk through (binary, or only renamed).')
 
     const guide = loadGuide(repo, number, headSha)
-    const context = await this.navigator.guideContext(repo, number, [file]).catch(() => '')
+    const [context, functions] = await Promise.all([
+      this.navigator.guideContext(repo, number, [file]).catch(() => ''),
+      this.functionsAround(repo, headSha, path, hunks).catch(() => '')
+    ])
+    const briefing = loadBriefing(repo, number, headSha)
     const settings = getAiSettings()
     const instructions = systemPrompt('walkthrough', repo, this.worktrees.prRefs(repo, number).rules)
     const answer = await getProvider(settings.provider).generate<ModelWalkthrough>({
@@ -143,7 +153,10 @@ export class Walkthroughs {
         guideFile: guide?.files.find((g) => g.path === path),
         hunks,
         context,
-        otherFiles: files.filter((f) => f.path !== path && !f.noise).map((f) => f.path)
+        otherFiles: files.filter((f) => f.path !== path && !f.noise).map((f) => f.path),
+        functions,
+        background: briefing?.headSha === headSha ? briefingPromptText(briefing) : '',
+        feedback: feedbackPromptText(repo)
       }),
       schema: WALKTHROUGH_SCHEMA as unknown as Record<string, unknown>,
       model: settings.model,
@@ -165,6 +178,37 @@ export class Walkthroughs {
     mkdirSync(dirname(out), { recursive: true })
     writeFileSync(out, JSON.stringify(walkthrough, null, 2))
     return walkthrough
+  }
+
+  /** The whole functions the hunks touch, at the head, numbered; each once, long ones cut. */
+  private async functionsAround(repo: string, headSha: string, path: string, hunks: HunkWithText[]): Promise<string> {
+    const spec = `${headSha}:${path}`
+    const blob = (await catFiles(this.worktrees.repoDir(repo), [spec], this.worktrees.tokenOrNull())).get(spec)
+    if (!blob || blob.length > 2 * 1024 * 1024) return ''
+    const lines = blob.toString('utf8').split('\n')
+    const symbols = outline(path, blob.toString('utf8'))
+    const seen = new Set<string>()
+    const parts: string[] = []
+    let budget = MAX_FUNCTION_CHARS
+    for (const h of hunks) {
+      if (!h.newLines) continue
+      // Every function the hunk's lines fall in (a hunk can span the end of one and the start of the next).
+      for (let line = h.newStart; line < h.newStart + h.newLines; line++) {
+        const s = symbolAt(symbols, line)
+        if (!s || s.kind === 'module' || s.kind === 'class' || seen.has(`${s.name}:${s.line}`)) continue
+        seen.add(`${s.name}:${s.line}`)
+        const end = Math.min(s.endLine, s.line + MAX_FUNCTION_LINES - 1)
+        const text = lines
+          .slice(s.line - 1, end)
+          .map((l, i) => `${String(s.line + i).padStart(5)} | ${l}`)
+          .join('\n')
+        const more = s.endLine > end ? `\n      … ${s.endLine - end} more lines` : ''
+        if (text.length > budget) return parts.join('\n\n') + '\n[more functions left out: too long]'
+        budget -= text.length
+        parts.push(`${s.kind} ${s.name} (lines ${s.line}-${s.endLine}):\n${text}${more}`)
+      }
+    }
+    return parts.join('\n\n')
   }
 
   /** Drops references to files that don't exist at the PR head (the model can misremember a path). */

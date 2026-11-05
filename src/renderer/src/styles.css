@@ -870,6 +870,7 @@ fieldset {
   letter-spacing: 0.04em;
 }
 .center-col {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
@@ -1215,6 +1216,14 @@ button.link.danger {
 /* ---- Background panel ---- */
 .bg-head {
   margin-bottom: 6px;
+}
+.bg-rules {
+  margin-top: 0;
+}
+.bg-before-title {
+  margin-top: 14px !important;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
 }
 .bg-concept {
   border-top: 1px solid var(--border);
@@ -1855,6 +1864,18 @@ button.big {
   text-align: left;
   padding: 6px 4px;
 }
+.outline-pre {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.outline-pre:hover {
+  color: var(--text);
+}
 .outline-count {
   margin-left: auto;
   flex-shrink: 0;
@@ -1942,38 +1963,8 @@ button.big {
   padding: 0;
 }
 
-.file-step {
-  flex-shrink: 0;
-  max-height: 46%;
-  overflow: auto;
-  padding: 8px 14px 4px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-}
-.file-step-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.file-step .file-card {
-  margin: 8px 0;
-}
-.chunk-nav {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 6px;
-}
-.chunk-nav .icon {
-  padding: 1px 8px;
-  font-size: 12px;
-}
 .keys {
   font-size: 11px;
-}
-.hunk-list.single {
-  margin: 6px 0 8px;
 }
 
 .finish-grid {
@@ -2068,7 +2059,6 @@ li > .md p {
   flex-shrink: 0;
 }
 
-/* Guided file step: the diff keeps the full height, the review card sits on its right. */
 .step-row {
   flex: 1;
   min-height: 0;
@@ -2080,28 +2070,9 @@ li > .md p {
   display: flex;
   flex-direction: column;
 }
-.step-row > .file-step {
-  width: clamp(320px, 30%, 460px);
-  max-height: none;
-  border-bottom: none;
-  border-left: 1px solid var(--border);
-  background: var(--bg-soft);
-}
-.step-row > .file-step .file-step-head {
-  flex-wrap: wrap;
-}
-.step-row > .file-step .file-card {
-  background: var(--bg);
-}
-.step-row > .file-step .chunk-nav {
-  flex-wrap: wrap;
-}
 
 /* Bar above the current chunk, in the code */
 .chunk-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   min-width: 0;
   padding: 3px 4px 3px 10px;
   border: 1px solid var(--accent);
@@ -2109,7 +2080,34 @@ li > .md p {
   border-radius: 6px;
   background: var(--bg-active);
   font-size: 12px;
+}
+.chunk-banner {
+  container-type: inline-size;
+}
+.chunk-banner-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
   white-space: nowrap;
+}
+.chunk-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+/* Narrow bar: the note's first line goes on its own line under the controls. */
+@container (max-width: 860px) {
+  .chunk-banner .chunk-banner-row button.chunk-banner-summary {
+    order: 10;
+    flex: 1 1 100%;
+    padding-left: 18px;
+  }
+  .chunk-banner-fn {
+    max-width: 160px;
+  }
 }
 .chunk-banner.approved {
   border-color: var(--add);
@@ -2121,20 +2119,96 @@ li > .md p {
 .chunk-banner.approved .chunk-banner-title {
   color: var(--add);
 }
-.chunk-banner code {
+.chunk-banner-fn {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 220px;
-}
-.chunk-banner-summary {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-  color: var(--text);
+  flex-shrink: 1;
 }
 .chunk-banner button {
   padding: 2px 10px;
   flex-shrink: 0;
+}
+.chunk-banner button.chunk-banner-summary {
+  flex: 1;
+  flex-shrink: 1;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  color: var(--text);
+  text-decoration: none;
+}
+.chunk-banner button.chunk-banner-summary:hover {
+  color: var(--accent);
+}
+.chunk-banner button.link {
+  padding: 2px 4px;
+}
+.chunk-banner button.icon {
+  padding: 1px 7px;
+}
+.chunk-banner button.auto-tag {
+  cursor: pointer;
+}
+.chunk-banner-note {
+  padding: 6px 8px 4px 2px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: normal;
+  max-width: 900px;
+}
+.chunk-banner-note p {
+  margin: 0 0 4px;
+}
+.chunk-banner-note ul {
+  margin: 4px 0 0;
+}
+
+/* Guided view: what the open file is about, under its name */
+.file-brief {
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow: auto;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  background: var(--bg-soft);
+}
+.file-brief.risk-high {
+  border-left-color: var(--risk-high);
+}
+.file-brief.risk-medium {
+  border-left-color: var(--risk-medium);
+}
+.file-brief.risk-low {
+  border-left-color: var(--risk-low);
+}
+.file-brief-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.file-brief-why {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-brief p {
+  margin: 4px 0;
+}
+.file-brief-body {
+  padding: 4px 0 2px;
+}
+.file-brief-body .file-card {
+  margin: 4px 0;
+  padding: 0;
+  border: none;
+  background: none;
 }
 
 /* ---- Your review state in the PR list ---- */
@@ -2505,4 +2579,147 @@ textarea.mono {
 }
 .monaco-editor .margin-view-overlays .line-numbers {
   cursor: pointer !important;
+}
+
+/* ---- Definition / reference results, floating over the code ---- */
+.nav-popup {
+  position: absolute;
+  top: 40px;
+  right: 18px;
+  z-index: 30;
+  width: min(560px, calc(100% - 36px));
+  max-height: 55%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+}
+.nav-popup-head {
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.nav-popup-body {
+  overflow: auto;
+  padding: 8px 12px;
+}
+
+/* ---- Rating AI hints (👍 / 👎) ---- */
+.rated-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.rated-hint-text {
+  flex: 1;
+  min-width: 0;
+}
+.rated-hint-text > :last-child,
+.rated-hint-text p:last-child {
+  margin-bottom: 0;
+}
+.rated-hint.noise .rated-hint-text {
+  opacity: 0.45;
+}
+.rate {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.rated-hint:hover > .rate,
+.rate.rated {
+  opacity: 1;
+}
+.rate-btn {
+  padding: 0 3px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+.rate-btn:hover {
+  opacity: 1;
+  filter: none;
+  border-color: var(--border);
+}
+.rate-btn.on {
+  opacity: 1;
+  filter: none;
+  border-color: var(--accent);
+  background: var(--bg-active);
+}
+.rate.rated .rate-btn:not(.on) {
+  visibility: hidden;
+}
+.rated-hint:hover .rate.rated .rate-btn {
+  visibility: visible;
+}
+.chunk-banner .rate-btn {
+  padding: 0 3px;
+}
+.line-menu-focus {
+  max-width: 420px;
+  padding: 4px 10px 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+}
+.line-menu-focus-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.line-menu-focus-note > span:first-child {
+  flex: 1;
+}
+.line-menu-focus .rate {
+  opacity: 1;
+}
+.line-menu-focus .rate-btn {
+  font-size: 13px;
+}
+.line-menu .line-menu-focus .rate-btn {
+  display: inline-block;
+  width: auto;
+  padding: 0 4px;
+  border: 1px solid transparent;
+}
+.line-menu .line-menu-focus .rate-btn.on {
+  border-color: var(--accent);
+}
+.chunk-banner button.chunk-banner-chevron,
+.chunk-banner-chevron {
+  width: 18px;
+  padding: 0;
+  margin-left: -4px;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 10px;
+  line-height: 18px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.12s;
+}
+.chunk-banner-chevron.open {
+  transform: rotate(90deg);
+}
+.chunk-banner button.chunk-banner-chevron:hover {
+  background: var(--bg-hover);
+  border-radius: 4px;
+}
+.chunk-banner.approved .chunk-banner-chevron {
+  color: var(--add);
+}
+.chunk-banner-chevron.empty {
+  opacity: 0.35;
+  cursor: default;
 }

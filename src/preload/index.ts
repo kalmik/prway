@@ -63,6 +63,10 @@ const api: PrwayApi = {
     walkthrough: call('review:walkthrough'),
     prepareAll: call('review:prepareAll')
   },
+  feedback: {
+    list: call('feedback:list'),
+    rate: call('feedback:rate')
+  },
   chat: {
     send: call('chat:send')
   },

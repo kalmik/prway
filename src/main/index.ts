@@ -35,6 +35,7 @@ import { KnowledgeBase } from './kb/knowledge'
 import { WorktreeCleanup } from './git/cleanup'
 import { API_KEY_SECRET, getAiSettings, saveAiSettings } from './ai/provider'
 import { chat } from './review/chat'
+import { loadFeedback, rateHint } from './review/feedback'
 import { generateBriefing, loadBriefing } from './trace/briefing'
 import { CardStore } from './trace/cards'
 import { Walkthroughs } from './review/walkthrough'
@@ -242,6 +243,9 @@ function registerIpc(): void {
     await prepared(repo, number)
     return navigator.forFunction(repo, number, fn)
   })
+
+  handle('feedback:list', async (repo: string) => loadFeedback(repo))
+  handle('feedback:rate', async (repo: string, hint: Parameters<typeof rateHint>[1]) => rateHint(repo, hint))
 
   handle('review:hunks', async (repo: string, number: number) => {
     await prepared(repo, number)
