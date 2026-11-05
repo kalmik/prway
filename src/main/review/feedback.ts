@@ -79,7 +79,7 @@ export function feedbackPromptText(repo: string): string {
   const noise = pick(loadFeedback(repo), PROMPT_NOISE)
   if (!noise.length) return ''
   const line = (f: HintFeedback) =>
-    `- (${f.path}${f.kind === 'focus' ? ', a focus line of the guide' : ''}) ${short(f.text)}${f.comment ? `\n  REVIEWER'S REASON: ${short(f.comment)}` : ''}`
+    `- (${f.path}${f.kind === 'focus' ? ', a focus line' : ''}) ${short(f.text)}${f.comment ? `\n  REVIEWER'S REASON: ${short(f.comment)}` : ''}`
   return [
     'REVIEWER FEEDBACK on earlier AI hints in this repository (the same reviewer, earlier PRs).',
     "Where a REVIEWER'S REASON is given, treat it as a rule for this repository: apply it to any similar code, not only to that exact hint.",

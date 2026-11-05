@@ -131,7 +131,7 @@ export async function generateGuide(deps: GuideDeps, pull: PullDetail, files: Ch
   const { review, prompt, truncatedFiles } = await prMaterial(deps, pull, files)
 
   const instructions = systemPrompt('guide', pull.repo, deps.worktrees.rulesOrNull(pull.repo, pull.number))
-  // Your ratings of earlier hints: the guide's focus lines should skip the same kinds of points.
+  // Your ratings of earlier hints: the guide should skip the same kinds of points.
   const feedback = feedbackPromptText(pull.repo)
   const answer = await provider.generate<ModelGuide>({
     system: instructions.system,

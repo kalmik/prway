@@ -83,7 +83,7 @@ mechanical edits, checking the change against the stated intent, and a knowledge
   - intent, plus its source (linked issue, description, commits or inferred)
   - business rules changed, before → after, with path and line
   - changes not explained by the intent
-  - files in reading order, each with a risk level, role, why it matters, and up to 4 focus lines
+  - files in reading order, each with a risk level, role and why it matters (focus lines come from the AI review)
   - questions for the author
 - Focus lines are highlighted in the diff, with the notes on hover. Rules, files and lines in the guide are clickable.
 - Guides are saved per head commit in `~/.prway/guides/`, marked stale when new commits arrive, and can be regenerated.
@@ -191,6 +191,9 @@ mechanical edits, checking the change against the stated intent, and a knowledge
     "trivial" and the low-risk-outside-the-core rule, which stay for PRs without a review. Fixed rules still pass
     their chunks; findings and business rule lines (outside docs files: those only describe the change, whose
     behaviour is reviewed in the code) always need you. Chunks left for you show the review's "Check: …" note
+  - each chunk that needs you also gets the line to look at (inside the chunk, checked): those are the files' focus
+    lines (gutter marks, L links, the Guide tab), so focus lines are checked against the code. Guides no longer make
+    them; guides from before keep theirs until a review with lines exists
   - saved reviews carry a format version; older ones are made again
   - saved per head commit in `~/.prway/guides/<repo>/pr-<n>/review/<sha>.json`
 - File step: no side panel, everything sits on the diff:
@@ -213,7 +216,7 @@ mechanical edits, checking the change against the stated intent, and a knowledge
   - shown in the PR's details line ("AI: Work · you@work.com", click to change), next to the chat box, in the
     "Claude (Work) is reading…" messages, and on what the AI made (guide, walkthroughs, Background, chat replies)
   - the old single AI setting (and its API key) becomes the "Default" account on first start
-- Feedback on AI hints: 👎 ("not useful") on every Check item and chunk note (on hover), and on the guide's focus lines
+- Feedback on AI hints: 👎 ("not useful") on every Check item and chunk note (on hover), and on the focus lines
   in the diff (click the line number: the focus note is at the top of the line menu; 👎 removes that line's highlight
   and its focus link). There's no 👍: a useful hint needs nothing, it keeps coming. Saved per repository in
   `~/.prway/feedback/<owner>/<repo>.json` (last 500; 👍 ratings from older versions are ignored). The last 30 go into

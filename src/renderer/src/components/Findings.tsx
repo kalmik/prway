@@ -1,7 +1,7 @@
 // The AI review's findings: confirmed problems, each at a line of the PR, shown where you read (the chunk bar, the file
 // summary, the overview). Mark one 👎 with a reason and later reviews of the repository skip that kind of point.
 
-import type { Hunk, PrReview, ReviewFinding } from '../../../shared/types'
+import type { Hunk, PrReview, ReviewFinding, ReviewGuide } from '../../../shared/types'
 import { timeAgo } from '../util'
 import { Markdown } from './Markdown'
 import { Elapsed, RatedHint, type Walkthroughs } from './ReviewPanel'
@@ -23,6 +23,20 @@ export function findingsIn(review: PrReview | null, path: string, hunk: Hunk): R
   return review.findings.filter(
     (f) => f.path === path && (f.hunkHash ? f.hunkHash === hunk.hash : hunk.newLines > 0 && f.line >= hunk.newStart && f.line < hunk.newStart + hunk.newLines)
   )
+}
+
+/**
+ * The guide with its focus lines taken from the AI review: the line to look at in each chunk that needs you. Guides
+ * made before focus lines moved to the review keep their own until a review with lines exists.
+ */
+export function withReviewFocus(guide: ReviewGuide | null, review: PrReview | null): ReviewGuide | null {
+  if (!guide || !review?.chunks?.some((c) => c.line)) return guide
+  const byPath = new Map<string, { line: number; note: string }[]>()
+  for (const c of review.chunks) {
+    if (!c.needsYou || !c.line) continue
+    byPath.set(c.path, [...(byPath.get(c.path) ?? []), { line: c.line, note: c.reason || 'Look here' }])
+  }
+  return { ...guide, files: guide.files.map((f) => ({ ...f, focus: (byPath.get(f.path) ?? []).sort((a, b) => a.line - b.line) })) }
 }
 
 /** What a 👎 on a finding is remembered as. */

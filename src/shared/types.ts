@@ -98,6 +98,7 @@ export interface GuideFile {
   /** Short label such as "business rule", "core logic", "test", "config". */
   role: string
   why: string
+  /** Lines worth a careful look. Not from the guide's AI request: the AI review fills them (its "check" line per chunk). */
   focus: GuideFocus[]
 }
 
@@ -302,6 +303,8 @@ export interface ChunkCall {
   needsYou: boolean
   /** Why, in a few words; for a chunk that needs you, what to look at. */
   reason: string
+  /** For a chunk that needs you: the line (new file) to look at; it becomes the file's focus line. */
+  line?: number
 }
 
 /** The AI review of a PR at one head commit: a few confirmed findings, or why it was skipped. */

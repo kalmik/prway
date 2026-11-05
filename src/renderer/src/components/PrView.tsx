@@ -35,7 +35,7 @@ import { BackgroundPanel } from './BackgroundPanel'
 import { ReviewBox } from './ReviewBox'
 import { threadGroup, ThreadsPanel } from './ThreadsPanel'
 import { AiBadge, useAiInUse } from './AiAccounts'
-import { findingsIn, type ReviewState } from './Findings'
+import { findingsIn, withReviewFocus, type ReviewState } from './Findings'
 import { FileBrief, FinishStep, OverviewStep, ReviewOutline, type Step } from './Guided'
 import { approvalKey, hunkAnchor, ReviewPanel, useWalkthroughs, type ReviewFlow } from './ReviewPanel'
 
@@ -118,10 +118,12 @@ export function PrView({
   const [reveal, setReveal] = useState<RevealRequest | null>(null)
   const lastLine = useRef(1)
 
-  const [guide, setGuide] = useState<ReviewGuide | null>(null)
+  const [savedGuide, setGuide] = useState<ReviewGuide | null>(null)
   const [briefing, setBriefing] = useState<Briefing | null>(null)
   // The AI review (findings): runs after the guide, once per head commit.
   const [prReview, setPrReview] = useState<PrReview | null>(null)
+  // Focus lines come from the AI review.
+  const guide = useMemo(() => withReviewFocus(savedGuide, prReview), [savedGuide, prReview])
   const [reviewBusy, setReviewBusy] = useState(false)
   const [reviewError, setReviewError] = useState<string | null>(null)
   const [autoReview, setAutoReview] = useStored('ui.autoReview', true)

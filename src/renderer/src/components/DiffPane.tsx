@@ -462,6 +462,56 @@ export function DiffPane(props: Props) {
     }
   }, [modified, memoryKey, file.path])
 
+  // ---- Hidden unchanged lines: "+10 lines" and "Show all" on Monaco's folded-region bar ----
+  // Monaco's bar only unfolds everything (its thin top/bottom edges reveal more, but nobody finds them). The buttons
+  // drive those same edges: a click on an edge reveals `revealLineCount` lines from that side.
+  useEffect(() => {
+    const de = diffEditorRef.current
+    if (!de || !modified) return
+    const root = de.getContainerDomNode()
+    const click = (el: Element | null) => {
+      if (!el) return
+      el.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true, cancelable: true }))
+      window.dispatchEvent(new MouseEvent('mouseup', { button: 0 }))
+    }
+    const decorate = () => {
+      for (const bar of root.querySelectorAll('.diff-hidden-lines')) {
+        const center = bar.querySelector(':scope > .center')
+        if (!center || center.querySelector('.hidden-lines-actions')) continue
+        const actions = document.createElement('span')
+        actions.className = 'hidden-lines-actions'
+        const more = document.createElement('button')
+        more.className = 'link small'
+        more.textContent = '+10 lines'
+        more.title = 'Show 10 more unchanged lines next to the change'
+        more.onclick = (e) => {
+          e.stopPropagation()
+          // At the start of the file the change is below: reveal from the bottom edge, else from the top edge.
+          const ed = original?.getDomNode()?.contains(bar) ? original : modified
+          const box = ed.getDomNode()?.getBoundingClientRect()
+          const atStart = !!box && bar.getBoundingClientRect().top - (box.top + ed.getTopForLineNumber(1) - ed.getScrollTop()) < 4
+          click(bar.querySelector(atStart ? ':scope > .bottom' : ':scope > .top'))
+        }
+        const all = document.createElement('button')
+        all.className = 'link small'
+        all.textContent = 'Show all'
+        all.title = 'Show every hidden line here'
+        all.onclick = (e) => {
+          e.stopPropagation()
+          ;(bar.querySelector('a.default-control') as HTMLElement | null)?.click()
+        }
+        actions.append(more, all)
+        center.append(actions)
+      }
+    }
+    decorate()
+    // The bars are overlay widgets: watch only those layers (the rest of the editor changes on every scroll).
+    const obs = new MutationObserver(decorate)
+    const layers = root.querySelectorAll('.overlayWidgets')
+    for (const l of layers.length ? layers : [root]) obs.observe(l, { childList: true, subtree: true })
+    return () => obs.disconnect()
+  }, [modified, original])
+
   // ---- Scroll to a requested line ----
   // The diff is computed asynchronously, and folding unchanged regions moves lines around:
   // scroll only once the diff for this model is ready.
@@ -694,7 +744,7 @@ export function DiffPane(props: Props) {
             // Moves inside the file; moves between files come from git (see the moved-line marks).
             experimental: { showMoves: true },
             // Fold long runs of unchanged lines so the focus stays on what changed.
-            hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 5 }
+            hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 5, revealLineCount: 10 }
           }}
         />
       </div>

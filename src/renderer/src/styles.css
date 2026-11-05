@@ -3113,3 +3113,19 @@ p.chunk-look {
 .chunk-banner-note .finding {
   margin-bottom: 6px;
 }
+
+/* "+10 lines" and "Show all" on the folded unchanged-lines bar of the diff. */
+.diff-hidden-lines .hidden-lines-actions {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+.diff-hidden-lines .hidden-lines-actions button {
+  font-size: 11.5px;
+}
+/* Monaco's unfold icon does what "Show all" does; the button stays (hidden) because "Show all" clicks it. */
+.diff-hidden-lines .center .first .default-control {
+  visibility: hidden;
+}

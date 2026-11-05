@@ -1,11 +1,14 @@
 // Pure prompt-building code for the review guide (no Electron or network), so it can be tested on its own.
 
-import type { ChangedFile, PullDetail, ReviewGuide } from '../../shared/types'
+import type { ChangedFile, GuideFile, PullDetail, ReviewGuide } from '../../shared/types'
 
 const MAX_FILE_CHARS = 40_000 // per file diff
 const MAX_TOTAL_CHARS = 400_000 // all diffs together (~100k tokens)
 
-export type ModelGuide = Omit<ReviewGuide, 'headSha' | 'provider' | 'model' | 'createdAt' | 'truncatedFiles'>
+// Focus lines come from the AI review (it reads the code to check them), not from the guide.
+export type ModelGuide = Omit<ReviewGuide, 'headSha' | 'provider' | 'model' | 'createdAt' | 'truncatedFiles' | 'files'> & {
+  files: Omit<GuideFile, 'focus'>[]
+}
 
 // Structured-output schemas need every property listed in `required` and no extra properties.
 export const GUIDE_SCHEMA = {
@@ -42,25 +45,12 @@ export const GUIDE_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['path', 'risk', 'role', 'why', 'focus'],
+        required: ['path', 'risk', 'role', 'why'],
         properties: {
           path: { type: 'string' },
           risk: { type: 'string', enum: ['high', 'medium', 'low'] },
           role: { type: 'string', description: 'Short label: business rule, core logic, API, data/schema, config, test, refactor, docs, other.' },
-          why: { type: 'string', description: 'One sentence: why this file matters for the review.' },
-          focus: {
-            type: 'array',
-            description: 'At most 4 lines worth a careful look. Empty for low-risk files.',
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['line', 'note'],
-              properties: {
-                line: { type: 'integer', description: 'Line number in the NEW file, taken from the annotated diff.' },
-                note: { type: 'string' }
-              }
-            }
-          }
+          why: { type: 'string', description: 'One sentence: why this file matters for the review.' }
         }
       }
     },
@@ -102,12 +92,12 @@ export const SYSTEM_PROMPT = `You help a human reviewer review a GitHub pull req
 - point out every place where business rules change, in plain words with before -> after
 - flag changes the stated intent does not explain (scope creep, unrelated edits, risky side effects)
 - order the files the way a reviewer should read them: the core change first, code that depends on it next, tests next to what they test, config and docs last
-- give each file a risk level and at most 4 focus lines; low-risk files get no focus lines
+- give each file a risk level
 - name the core concepts of the change (features or business rules) and the functions where each one lives; PRway traces them through the code to explain how they worked before
 
 Line numbers: the diffs are annotated with the line number in the new file ("+ 120 |" or "  120 |"). Deleted lines have no number. Use only line numbers that appear in the annotated diff.
 
-REPOSITORY CONTEXT lists, for changed functions, how many places call them, which tests exercise them and recent commits. Use it to judge risk: a widely used function with no tests found deserves a higher risk and a focus line.
+REPOSITORY CONTEXT lists, for changed functions, how many places call them, which tests exercise them and recent commits. Use it to judge risk: a widely used function with no tests found deserves a higher risk.
 PAST DECISIONS are notes from earlier merged PRs on the same code. If this PR goes against one of them, say so under "mismatches".
 
 Files listed under SKIPPED were already classified as noise (generated, renamed, formatting only); do not include them in "files".
@@ -189,10 +179,12 @@ export function buildPrompt({ pull, issues, commits, review, skipped, context, k
 }
 
 /** Keeps only files that exist in the PR (once each) and appends any the model left out. */
-export function normalizeFiles(answer: ModelGuide['files'], review: ChangedFile[]): ModelGuide['files'] {
+export function normalizeFiles(answer: ModelGuide['files'], review: ChangedFile[]): GuideFile[] {
   const known = new Set(review.map((f) => f.path))
   const seen = new Set<string>()
-  const ordered = answer.filter((g) => known.has(g.path) && !seen.has(g.path) && !!seen.add(g.path))
+  const ordered: GuideFile[] = answer
+    .filter((g) => known.has(g.path) && !seen.has(g.path) && !!seen.add(g.path))
+    .map((g) => ({ path: g.path, risk: g.risk, role: g.role, why: g.why, focus: [] }))
   for (const f of review) {
     if (!seen.has(f.path)) ordered.push({ path: f.path, risk: 'low', role: 'other', why: 'Not covered by the guide.', focus: [] })
   }
