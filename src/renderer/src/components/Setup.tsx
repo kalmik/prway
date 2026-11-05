@@ -6,6 +6,7 @@ import type { AiConfig, SetupCheck } from '../../../shared/types'
 import { errorText, storage } from '../util'
 import { openSettings } from './SettingsDialog'
 import { signInText } from './AiAccounts'
+import { Loading } from './Loading'
 
 const api = window.prway
 
@@ -122,7 +123,9 @@ export function SetupPanel({ onOpenTab = openSettings }: { onOpenTab?: (tab: 'ai
     }
   }
 
-  if (!check || !config) return <div className="settings-section">{error ? <p className="error small">{error}</p> : <p className="small muted">Checking…</p>}</div>
+  if (!check || !config) return <div className="settings-section">{error ? <p className="error small">{error}</p> : <p className="small">
+            <Loading>Checking what PRway needs…</Loading>
+          </p>}</div>
   const def = config.accounts.find((a) => a.id === config.defaultAccount)
   const usesClaude = def?.provider === 'claude-code'
   const ready = !needsSetup(check, config)
@@ -220,7 +223,7 @@ export function SetupPanel({ onOpenTab = openSettings }: { onOpenTab?: (tab: 'ai
       <div className="row end">
         {ready && <span className="small ok spacer">Everything PRway needs is ready.</span>}
         <button disabled={checking} onClick={() => void recheck()}>
-          {checking ? 'Checking…' : 'Check again'}
+          {checking ? <Loading>Checking</Loading> : 'Check again'}
         </button>
       </div>
     </div>

@@ -233,9 +233,18 @@ export function OverviewStep({
   onStart: () => void
 }) {
   // Chunks the AI review passed: it decides pre-approval when it ran.
+  const [optionsOpen, setOptionsOpen] = useState(() => storage.get('ui.reviewOptionsOpen', false))
   const r = review.review
   const hasCalls = !!(r && !r.skipped && r.chunks)
   const reviewCalls = hasCalls ? r!.chunks!.filter((c) => !c.needsYou).length : 0
+  // Before the guide, making it is the first step; once it is current, starting the review is.
+  const needsGuide = !guide || stale
+  const generateLabel = `${guide ? 'Regenerate' : 'Generate'} guide${review.auto ? ' & AI review' : ''}`
+  const optionsSummary = [
+    pre.rules && 'safe changes',
+    pre.ai && 'what the AI passes',
+    !hasCalls && pre.background && 'low risk outside the core'
+  ].filter(Boolean)
   return (
     <div className="step-page">
       <div className="step-hero">
@@ -248,58 +257,93 @@ export function OverviewStep({
             {stats.noise > 0 && ` · ${stats.noise} noise file${stats.noise > 1 ? 's' : ''} skipped`}
             {stats.threads > 0 && ` · ${stats.threads} open thread${stats.threads > 1 ? 's' : ''}`}
           </p>
+          {needsGuide && !busy && (
+            <p className="small muted">
+              {stale
+                ? 'New commits since the guide was made.'
+                : `The AI reads the PR for its intent and a reading order${review.auto ? ', then reviews it and picks what you need to read' : ''}.`}
+            </p>
+          )}
         </div>
-        <button className="primary big" onClick={onStart} disabled={!stats.files}>
-          Start review →
-        </button>
+        <div className="step-hero-actions">
+          {needsGuide ? (
+            <>
+              <button className="primary big" onClick={onGenerate} disabled={busy || !stats.files}>
+                {busy ? <Loading>Generating the guide…</Loading> : generateLabel}
+              </button>
+              <button className="link small" onClick={onStart} disabled={!stats.files} title="Review the files in their order, without the AI reading order">
+                {guide ? 'Start review with this guide →' : 'Start without a guide →'}
+              </button>
+            </>
+          ) : (
+            <button className="primary big" onClick={onStart} disabled={!stats.files}>
+              Start review →
+            </button>
+          )}
+        </div>
       </div>
-      <div className="pre-approve small">
-        <label title="Imports and aliases, comments, blank lines, formatting-only and moved code">
-          <input type="checkbox" checked={pre.rules} onChange={(e) => pre.setRules(e.target.checked)} /> Pre-approve chunks that can't
-          change behaviour (imports, comments, formatting, moved code)
-        </label>
-        <label title="With an AI review: the chunks it says you don't need to read (business rule lines and chunks with a finding always stay). Without one: low-risk chunks a file walkthrough marks trivial, e.g. log wording or a local rename.">
-          <input type="checkbox" checked={pre.ai} onChange={(e) => pre.setAi(e.target.checked)} /> Pre-approve what the AI says you don’t
-          need to read{hasCalls && <span className="muted"> ({reviewCalls} chunks, from the AI review)</span>}
-        </label>
-        {!hasCalls && (
-          <label title="Used when there's no AI review (switched off, or not run yet). Chunks the file walkthrough rates low risk that touch none of the core: the traced functions and watch-out lines (Background tab) and the business rules.">
-            <input type="checkbox" checked={pre.background} onChange={(e) => pre.setBackground(e.target.checked)} /> Pre-approve low-risk
-            chunks outside the core change{!pre.hasBriefing && <span className="muted"> (build the Background tab first)</span>}
-          </label>
-        )}
-        <label title="After the guide, an AI review reads the code looking for real problems and decides, chunk by chunk, what you need to read. Chunks with a finding are never pre-approved. On by default; switch it off to save AI requests.">
-          <input type="checkbox" checked={review.auto} onChange={(e) => review.setAuto(e.target.checked)} /> Review the PR with AI after
-          the guide: it finds problems and picks what you need to read
-        </label>
-        <span className="muted">
-          Review instructions for this repository:{' '}
-          <button className="link" onClick={() => openSettings('prompts', repo)}>
-            customise
-          </button>
-        </span>
-        {pre.ai && !hasCalls && (
+      <details
+        className="review-options"
+        open={optionsOpen}
+        onToggle={(e) => {
+          const v = (e.currentTarget as HTMLDetailsElement).open
+          setOptionsOpen(v)
+          storage.set('ui.reviewOptionsOpen', v)
+        }}
+      >
+        <summary className="small">
+          Review options{' '}
           <span className="muted">
-            {wt.preparing ? (
-              `Explaining files in the background${wt.account ? ` (${wt.account})` : ''}… ${wt.preparing.done}/${wt.preparing.total}`
-            ) : stepPaths.some((p) => !wt.walk[p]) ? (
-              <>
-                {stepPaths.filter((p) => !wt.walk[p]).length} file(s) not explained yet ·{' '}
-                <button className="link" onClick={() => wt.prepareAll(stepPaths)}>
-                  explain them all now
-                </button>{' '}
-                (one AI call per file)
-              </>
-            ) : (
-              'Every file is explained.'
-            )}
+            · pre-approve: {optionsSummary.length ? optionsSummary.join(', ') : 'nothing'} · AI review: {review.auto ? 'on' : 'off'}
           </span>
-        )}
-      </div>
-      <ReviewStatus state={review} account={wt.account} wt={wt} onGoTo={onGoTo} />
-      <GuidePanel guide={guide} stale={stale} busy={busy} error={error} onGenerate={onGenerate} onGoTo={onGoTo} account={wt.account ?? undefined} />
-      {!guide && !busy && (
-        <p className="small muted">You can also start right away: files are then reviewed in their order, without the AI reading order.</p>
+        </summary>
+        <div className="pre-approve small">
+          <label title="Imports and aliases, comments, blank lines, formatting-only and moved code">
+            <input type="checkbox" checked={pre.rules} onChange={(e) => pre.setRules(e.target.checked)} /> Pre-approve chunks that can't
+            change behaviour (imports, comments, formatting, moved code)
+          </label>
+          <label title="With an AI review: the chunks it says you don't need to read (business rule lines and chunks with a finding always stay). Without one: low-risk chunks a file walkthrough marks trivial, e.g. log wording or a local rename.">
+            <input type="checkbox" checked={pre.ai} onChange={(e) => pre.setAi(e.target.checked)} /> Pre-approve what the AI says you don’t
+            need to read{hasCalls && <span className="muted"> ({reviewCalls} chunks, from the AI review)</span>}
+          </label>
+          {!hasCalls && (
+            <label title="Used when there's no AI review (switched off, or not run yet). Chunks the file walkthrough rates low risk that touch none of the core: the traced functions and watch-out lines (Background tab) and the business rules.">
+              <input type="checkbox" checked={pre.background} onChange={(e) => pre.setBackground(e.target.checked)} /> Pre-approve low-risk
+              chunks outside the core change{!pre.hasBriefing && <span className="muted"> (build the Background tab first)</span>}
+            </label>
+          )}
+          <label title="After the guide, an AI review reads the code looking for real problems and decides, chunk by chunk, what you need to read. Chunks with a finding are never pre-approved. On by default; switch it off to save AI requests.">
+            <input type="checkbox" checked={review.auto} onChange={(e) => review.setAuto(e.target.checked)} /> Review the PR with AI after
+            the guide: it finds problems and picks what you need to read
+          </label>
+          <span className="muted">
+            Review instructions for this repository:{' '}
+            <button className="link" onClick={() => openSettings('prompts', repo)}>
+              customise
+            </button>
+          </span>
+          {pre.ai && !hasCalls && (
+            <span className="muted">
+              {wt.preparing ? (
+                `Explaining files in the background${wt.account ? ` (${wt.account})` : ''}… ${wt.preparing.done}/${wt.preparing.total}`
+              ) : stepPaths.some((p) => !wt.walk[p]) ? (
+                <>
+                  {stepPaths.filter((p) => !wt.walk[p]).length} file(s) not explained yet ·{' '}
+                  <button className="link" onClick={() => wt.prepareAll(stepPaths)}>
+                    explain them all now
+                  </button>{' '}
+                  (one AI call per file)
+                </>
+              ) : (
+                'Every file is explained.'
+              )}
+            </span>
+          )}
+        </div>
+      </details>
+      {(guide || review.review || review.busy || review.error) && <ReviewStatus state={review} account={wt.account} wt={wt} onGoTo={onGoTo} />}
+      {(guide || busy || error) && (
+        <GuidePanel guide={guide} stale={stale} busy={busy} error={error} onGenerate={onGenerate} onGoTo={onGoTo} account={wt.account ?? undefined} />
       )}
     </div>
   )

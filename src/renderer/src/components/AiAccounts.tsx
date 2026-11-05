@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import type { AiAccount, AiConfig, AiEffort, AiInUse, AiProviderId, AiStatus, ClaudeSignIn } from '../../../shared/types'
 import { errorText } from '../util'
 import { openSettings } from './SettingsDialog'
+import { Loading } from './Loading'
 
 const api = window.prway
 
@@ -112,7 +113,7 @@ export function AiAccountsSettings() {
     setStatus((s) => ({ ...s, [id]: r }))
   }
 
-  if (!config) return error ? <p className="error small">{error}</p> : null
+  if (!config) return error ? <p className="error small">{error}</p> : <Loading>Loading AI accounts…</Loading>
   const usedBy = (id: string) => Object.entries(config.orgs).filter(([, a]) => a === id).map(([o]) => o)
 
   return (
@@ -133,7 +134,7 @@ export function AiAccountsSettings() {
                 {config.defaultAccount === a.id && <span className="tag">default</span>}
                 <span className="spacer" />
                 <button className="small" disabled={st === 'testing'} onClick={() => void test(a.id)}>
-                  {st === 'testing' ? 'Testing…' : 'Test'}
+                  {st === 'testing' ? <Loading>Testing</Loading> : 'Test'}
                 </button>
                 {a.provider === 'claude-code' && !config.signIns[a.id]?.email && (
                   <button
@@ -322,14 +323,18 @@ export function AiOrgsSettings({ repo }: { repo: string | null }) {
   const [orgs, setOrgs] = useState<string[]>([])
   const [adding, setAdding] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [loadingOrgs, setLoadingOrgs] = useState(true)
 
   useEffect(() => {
     api.ai.config().then(setConfig, (e) => setError(errorText(e)))
     // Organizations you have repositories in, plus the one of the open PR.
-    api.repos.list().then(
-      (l) => setOrgs((o) => [...new Set([...o, ...l.repos.map((r) => r.fullName.split('/')[0])])]),
-      () => undefined
-    )
+    api.repos
+      .list()
+      .then(
+        (l) => setOrgs((o) => [...new Set([...o, ...l.repos.map((r) => r.fullName.split('/')[0])])]),
+        () => undefined
+      )
+      .finally(() => setLoadingOrgs(false))
   }, [])
 
   const apply = async (p: Promise<AiConfig>) => {
@@ -342,7 +347,7 @@ export function AiOrgsSettings({ repo }: { repo: string | null }) {
     }
   }
 
-  if (!config) return error ? <p className="error small">{error}</p> : null
+  if (!config) return error ? <p className="error small">{error}</p> : <Loading>Loading AI accounts…</Loading>
   const current = repo?.split('/')[0]
   const all = [...new Set([...(current ? [current] : []), ...Object.keys(config.orgs), ...orgs])].sort((x, y) =>
     x === current ? -1 : y === current ? 1 : x.localeCompare(y)
@@ -394,6 +399,11 @@ export function AiOrgsSettings({ repo }: { repo: string | null }) {
           ))}
         </tbody>
       </table>
+      {loadingOrgs && (
+        <p className="small">
+          <Loading>Finding the organizations you have repositories in…</Loading>
+        </p>
+      )}
 
       <div className="row">
         <input placeholder="Another organization or user" value={adding} onChange={(e) => setAdding(e.target.value)} />

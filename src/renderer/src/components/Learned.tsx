@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 import type { HintFeedback } from '../../../shared/types'
 import { errorText, timeAgo } from '../util'
+import { Loading } from './Loading'
 
 const api = window.prway
 
@@ -44,6 +45,11 @@ export function LearnedSettings({ repo: initialRepo }: { repo: string | null }) 
         </select>
       </div>
       {error && <p className="small error">{error}</p>}
+      {!list && repo.includes('/') && !error && (
+        <p className="small">
+          <Loading>Loading what was learned…</Loading>
+        </p>
+      )}
       {list && !list.length && <p className="small muted">Nothing yet: in a review, hover a hint that isn’t useful and press 👎.</p>}
       <ul className="learned-list">
         {shown.map((f) => (

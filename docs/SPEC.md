@@ -166,7 +166,10 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 - A PR opens in the guided review; the classic file list + diff is one click away ("Files").
 - Left: an outline — Overview, the files in the guide's reading order with their chunks (diff hunks), skipped noise
   files, Finish & submit — with chunk and file progress.
-- Overview step: the review plan (files, chunks, noise, open threads) and the AI guide, then "Start review".
+- Overview step: the review plan (files, chunks, noise, open threads), the AI review and the AI guide. Until the guide
+  is current the main action is "Generate guide & AI review" (with "Start without a guide" beside it); once it is,
+  "Start review". The pre-approval and AI options sit folded under "Review options", with a one-line summary of what
+  is on.
 - File walkthroughs see the whole functions around each chunk at the PR head (up to 200 lines each, 60k characters
   per file), not just the diff's 3 lines of context, plus the Background briefing when built. Saved under `files-v3`
   (older walkthroughs that only saw the diff context are not reused)

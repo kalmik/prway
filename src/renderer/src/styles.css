@@ -1962,6 +1962,31 @@ button.big {
 .step-page .guide {
   padding: 0;
 }
+.step-hero-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+/* Pre-approval and AI options on the overview, folded by default. */
+.review-options {
+  margin-bottom: 10px;
+}
+.review-options > summary {
+  cursor: pointer;
+  padding: 4px 0;
+  user-select: none;
+}
+.review-options > summary:hover {
+  color: var(--accent);
+}
+.review-options[open] > summary {
+  margin-bottom: 6px;
+}
+.review-options .pre-approve {
+  margin-bottom: 0;
+}
 
 .keys {
   font-size: 11px;
@@ -3186,4 +3211,13 @@ p.chunk-look {
   .spinner {
     animation-duration: 2.4s;
   }
+}
+/* In a button the spinner follows the button's text colour (white on primary buttons). */
+button .loading {
+  color: inherit;
+}
+button .spinner {
+  border-color: transparent;
+  border-top-color: currentColor;
+  border-right-color: currentColor;
 }
