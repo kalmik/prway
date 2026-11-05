@@ -257,7 +257,7 @@ export function OverviewStep({
         {pre.ai && (
           <span className="muted">
             {wt.preparing ? (
-              `Explaining files in the background… ${wt.preparing.done}/${wt.preparing.total}`
+              `Explaining files in the background${wt.account ? ` (${wt.account})` : ''}… ${wt.preparing.done}/${wt.preparing.total}`
             ) : stepPaths.some((p) => !wt.walk[p]) ? (
               <>
                 {stepPaths.filter((p) => !wt.walk[p]).length} file(s) not explained yet ·{' '}
@@ -272,7 +272,7 @@ export function OverviewStep({
           </span>
         )}
       </div>
-      <GuidePanel guide={guide} stale={stale} busy={busy} error={error} onGenerate={onGenerate} onGoTo={onGoTo} />
+      <GuidePanel guide={guide} stale={stale} busy={busy} error={error} onGenerate={onGenerate} onGoTo={onGoTo} account={wt.account ?? undefined} />
       {!guide && !busy && (
         <p className="small muted">You can also start right away: files are then reviewed in their order, without the AI reading order.</p>
       )}
@@ -319,7 +319,7 @@ export function FileBrief({ flow, file }: { flow: ReviewFlow; file: ChangedFile 
         </span>
         {busy && (
           <span className="muted nowrap">
-            Claude is reading this file… <Elapsed />
+            Claude{wt.account ? ` (${wt.account})` : ''} is reading this file… <Elapsed />
           </span>
         )}
         {!busy && wt.error && (

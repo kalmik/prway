@@ -179,6 +179,17 @@ mechanical edits, checking the change against the stated intent, and a knowledge
     need you, range, function, risk, the first sentence of the note (on its own line when the bar is narrow), chunks left, ↑/↓, Approve & next (or ✓ approved / pre-approved, click to undo) and Comment (becomes
     a pending inline comment)
   - keys: j/k chunks, a approve & next, c comment, n/p files
+- AI accounts (Settings → AI accounts / Organizations), so different organizations can use different subscriptions:
+  - an account is a Claude Code sign-in (a config folder: `CLAUDE_CONFIG_DIR=~/.claude-work claude`, then /login, once)
+    or an Anthropic API key (per account, in `safeStorage`), with its own model and effort
+  - one account is the default; a GitHub organization (the repo owner) can be linked to any account, and one account
+    can serve many organizations; deleting an account sends its organizations back to the default
+  - who a Claude Code folder is signed in as is read from its `.claude.json` (`~/.claude.json` for `~/.claude`) and
+    shown next to it, so it's clear which subscription pays
+  - every AI request on a PR (guide, walkthroughs, chat, Background) uses the account of the PR's organization
+  - shown in the PR's details line ("AI: Work · you@work.com", click to change), next to the chat box, in the
+    "Claude (Work) is reading…" messages, and on what the AI made (guide, walkthroughs, Background, chat replies)
+  - the old single AI setting (and its API key) becomes the "Default" account on first start
 - Feedback on AI hints: 👍 / 👎 on every Check item and chunk note (on hover), and on the guide's focus lines in the
   diff (click the line number: the focus note is at the top of the line menu; 👎 removes that line's highlight and
   its focus link). Saved per repository in
@@ -307,8 +318,9 @@ mechanical edits, checking the change against the stated intent, and a knowledge
   - Known issue: an app opened from Finder or the Dock doesn't get your shell's `PATH`, so `claude` may not be found.
   - Workaround: `PRWAY_CLAUDE_BIN=/path/to/claude`.
   - Fix planned: also search the usual install folders (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`).
-- **Claude Code account:** reviews use whatever `CLAUDE_CONFIG_DIR` PRway was started with. Set
-  `PRWAY_CLAUDE_CONFIG_DIR` to use a different account for reviews only (`~/.claude` = the default account).
+- **Claude Code account:** each AI account names its own config folder (Settings → AI accounts). An account with no
+  folder uses Claude Code's default sign-in: the `CLAUDE_CONFIG_DIR` PRway was started with, else `~/.claude`.
+  `PRWAY_CLAUDE_CONFIG_DIR` only seeds the first account when upgrading from the single AI setting.
 - **Windows:** not tried.
 
 ## 9. Open questions

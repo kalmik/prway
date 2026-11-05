@@ -117,6 +117,8 @@ export interface ReviewGuide {
   headSha: string
   provider: AiProviderId
   model: string
+  /** The AI account that made it (its name). */
+  account?: string
   createdAt: string
   /** Files whose diff was too long and was cut before sending. */
   truncatedFiles: string[]
@@ -216,6 +218,8 @@ export interface Briefing {
   guideCreatedAt: string
   createdAt: string
   model: string
+  /** The AI account that made it (its name). */
+  account?: string
   concepts: BriefingConcept[]
   /** Cards of every traced function, by key. */
   cards: Record<string, FunctionCard>
@@ -266,6 +270,8 @@ export interface FileWalkthrough {
     trivialReason?: string
   }[]
   model: string
+  /** The AI account that made it (its name). */
+  account?: string
   createdAt: string
 }
 
@@ -320,12 +326,51 @@ export interface PromptSettingsView {
 export type AiProviderId = 'claude-code' | 'anthropic-api'
 export type AiEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
-export interface AiSettings {
+/**
+ * One way to reach Claude: a Claude Code sign-in (a subscription; each config folder can hold a different account)
+ * or an Anthropic API key. Organizations are linked to an account; the rest use the default one.
+ */
+export interface AiAccount {
+  id: string
+  /** Your name for it, e.g. "Work" or "Personal". */
+  name: string
   provider: AiProviderId
+  /**
+   * Claude Code only: the config folder of the signed-in account, e.g. "~/.claude-work". Null: Claude Code's
+   * default (~/.claude, or CLAUDE_CONFIG_DIR when PRway was started with it).
+   */
+  claudeConfigDir: string | null
   model: string
   effort: AiEffort
-  /** Only for the anthropic-api provider; the key itself never reaches the UI. */
+  /** Anthropic API only; the key itself never reaches the UI. */
   hasApiKey: boolean
+}
+
+/** Who a Claude Code config folder is signed in as (read from its .claude.json), for display. */
+export interface ClaudeSignIn {
+  /** The folder as resolved, e.g. /Users/me/.claude. */
+  dir: string
+  email: string | null
+  organization: string | null
+}
+
+export interface AiConfig {
+  accounts: AiAccount[]
+  /** Used for every organization without a link. */
+  defaultAccount: string
+  /** GitHub organization or user (the repository owner) -> account id. */
+  orgs: Record<string, string>
+  /** Sign-in of each Claude Code account, by account id (missing when it can't be read). */
+  signIns: Record<string, ClaudeSignIn>
+}
+
+/** The account AI requests on a repository use, and why. */
+export interface AiInUse {
+  account: AiAccount
+  signIn: ClaudeSignIn | null
+  org: string
+  /** "org": the organization is linked to it; "default": no link, the default account. */
+  source: 'org' | 'default'
 }
 
 export interface AiStatus {
@@ -492,6 +537,8 @@ export interface ChatCodeRef {
 export interface ChatMessage {
   role: 'user' | 'assistant'
   text: string
+  /** Assistant messages: the AI account that answered (its name). */
+  account?: string
   /** Code the question is about (user messages only). */
   refs?: ChatCodeRef[]
 }
@@ -642,10 +689,20 @@ export interface PrwayApi {
     markRead(id: string): Promise<void>
   }
   ai: {
-    getSettings(): Promise<AiSettings>
-    /** apiKey: a string saves it, null deletes it, undefined leaves it unchanged. */
-    saveSettings(settings: Omit<AiSettings, 'hasApiKey'>, apiKey?: string | null): Promise<AiSettings>
-    test(): Promise<AiStatus>
+    config(): Promise<AiConfig>
+    /** Adds or updates an account. apiKey: a string saves it, null deletes it, undefined leaves it unchanged. */
+    saveAccount(account: Omit<AiAccount, 'hasApiKey'>, apiKey?: string | null): Promise<AiConfig>
+    /** Deletes an account; organizations linked to it go back to the default. The default can't be deleted. */
+    deleteAccount(id: string): Promise<AiConfig>
+    setDefault(id: string): Promise<AiConfig>
+    /** Links an organization to an account (null: back to the default). */
+    linkOrg(org: string, accountId: string | null): Promise<AiConfig>
+    /** Who a Claude Code config folder is signed in as (null folder: Claude Code's default). */
+    inspectClaudeDir(dir: string | null): Promise<ClaudeSignIn>
+    /** Sends a tiny request with the account. */
+    test(accountId: string): Promise<AiStatus>
+    /** The account AI requests on this repository use. */
+    forRepo(repo: string): Promise<AiInUse>
   }
   guide: {
     /** The saved guide for the PR's current head commit, if any. */

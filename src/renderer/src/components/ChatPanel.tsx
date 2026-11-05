@@ -1,6 +1,6 @@
 // Chat about the PR: the conversation (Chat tab) and the prompt bar under the bottom panel.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ChatCodeRef, ChatMessage } from '../../../shared/types'
 import { Markdown } from './Markdown'
 
@@ -32,8 +32,11 @@ export function ChatLog({
   onOpenRef,
   onOpenUrl,
   onClear,
-  onAsk
+  onAsk,
+  account
 }: {
+  /** The AI account that will answer (its name). */
+  account?: string
   messages: ChatMessage[]
   busy: boolean
   error: string | null
@@ -86,11 +89,14 @@ export function ChatLog({
               <p>{m.text}</p>
             </>
           ) : (
-            <Markdown text={m.text} onCodeRef={onCodeRef} onLink={onOpenUrl} />
+            <>
+              <Markdown text={m.text} onCodeRef={onCodeRef} onLink={onOpenUrl} />
+              {m.account && <div className="msg-via small muted">via {m.account}</div>}
+            </>
           )}
         </div>
       ))}
-      {busy && <div className="msg assistant muted small">Thinking…</div>}
+      {busy && <div className="msg assistant muted small">Thinking{account ? ` (${account})` : ''}…</div>}
       {error && <p className="small error">{error}</p>}
       {messages.length > 0 && !busy && (
         <button className="link small" onClick={onClear}>
@@ -108,8 +114,11 @@ export function ChatBar({
   refs,
   focus,
   onRemoveRef,
-  onOpenRef
+  onOpenRef,
+  badge
 }: {
+  /** Shows which AI account answers. */
+  badge?: ReactNode
   busy: boolean
   onSend: (text: string) => void
   refs: ChatCodeRef[]
@@ -156,6 +165,7 @@ export function ChatBar({
           }}
         />
       </div>
+      {badge}
       <button className="primary" disabled={busy || !text.trim()} onClick={send}>
         {busy ? '…' : 'Ask'}
       </button>

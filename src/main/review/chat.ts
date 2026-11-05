@@ -93,8 +93,8 @@ export async function chat(
 ): Promise<ChatMessage> {
   const last = messages.at(-1)
   if (!last || last.role !== 'user' || !last.text.trim()) throw new Error('Ask a question first')
-  const settings = getAiSettings()
-  const provider = getProvider(settings.provider)
+  const settings = getAiSettings(pull.repo)
+  const provider = getProvider(settings)
   const { prompt } = await prMaterial(deps, pull, files)
   const guideText = guide
     ? `\nREVIEW GUIDE (made earlier by AI):\n${JSON.stringify({ intent: guide.intent, businessRules: guide.businessRules, mismatches: guide.mismatches, files: guide.files, questions: guide.questions })}`
@@ -122,12 +122,12 @@ export async function chat(
       prefix,
       prompt: `CONVERSATION SO FAR (answer the last REVIEWER message):\n${transcript(messages)}`
     })
-    return { role: 'assistant', text: answer.answer }
+    return { role: 'assistant', text: answer.answer, account: settings.account.name }
   }
 
   // Claude Code: resume the PR's session when it has seen exactly the conversation before this question.
   const key = `${pull.repo}#${pull.number}`
-  const material = hash(`${settings.model}\n${system}\n${prefix}`)
+  const material = hash(`${settings.account.id}\n${settings.account.claudeConfigDir ?? ''}\n${settings.model}\n${system}\n${prefix}`)
   const saved = loadSessions()[key]
   const before = messages.slice(0, -1)
   const canResume = !!saved && saved.material === material && saved.conversation === conversationHash(before)
@@ -153,7 +153,7 @@ export async function chat(
     id = randomUUID()
     answer = await ask(false, id)
   }
-  const reply: ChatMessage = { role: 'assistant', text: answer.answer }
+  const reply: ChatMessage = { role: 'assistant', text: answer.answer, account: settings.account.name }
   saveSession(key, { id, material, conversation: conversationHash([...messages, reply]) })
   return reply
 }

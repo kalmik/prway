@@ -86,9 +86,14 @@ const api: PrwayApi = {
     markRead: call('notifications:markRead')
   },
   ai: {
-    getSettings: call('ai:getSettings'),
-    saveSettings: call('ai:saveSettings'),
-    test: call('ai:test')
+    config: call('ai:config'),
+    saveAccount: call('ai:saveAccount'),
+    deleteAccount: call('ai:deleteAccount'),
+    setDefault: call('ai:setDefault'),
+    linkOrg: call('ai:linkOrg'),
+    inspectClaudeDir: call('ai:inspectClaudeDir'),
+    test: call('ai:test'),
+    forRepo: call('ai:forRepo')
   },
   guide: {
     get: call('guide:get'),

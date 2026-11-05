@@ -196,10 +196,10 @@ export async function generateBriefing(
     }
   }
   const prompt = buildPrompt(pull, guide, traced, cardsKnown, store, needCards)
-  const settings = getAiSettings()
+  const settings = getAiSettings(pull.repo)
   const traceSeconds = Math.round((Date.now() - started) / 1000)
-  deps.progress?.(`Asking ${settings.model} (traced in ${traceSeconds}s)`)
-  const answer = await getProvider(settings.provider).generate<ModelAnswer>({
+  deps.progress?.(`Asking ${settings.model} with ${settings.account.name} (traced in ${traceSeconds}s)`)
+  const answer = await getProvider(settings).generate<ModelAnswer>({
     system: SYSTEM,
     prompt,
     schema: SCHEMA,
@@ -242,6 +242,7 @@ export async function generateBriefing(
     guideCreatedAt: guide.createdAt,
     createdAt: new Date().toISOString(),
     model: settings.model,
+    account: settings.account.name,
     concepts,
     cards: {},
     stats: {

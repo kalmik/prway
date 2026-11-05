@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ChangedFile, FileWalkthrough, GuideFile, HintFeedback, HintVerdict, Hunk, HunkAuto } from '../../../shared/types'
 import { errorText, storage, timeAgo } from '../util'
 import { Markdown } from './Markdown'
+import { useAiInUse } from './AiAccounts'
 
 const api = window.prway
 
@@ -33,6 +34,8 @@ export interface Walkthroughs {
   /** Background preparation of every file's walkthrough. */
   preparing: { done: number; total: number } | null
   prepareAll: (paths: string[]) => void
+  /** The AI account that explains files for this repository (its name). */
+  account: string | null
   /** Changes whenever a rating does (for memos). */
   ratings: Map<string, HintVerdict>
   /** Your rating of a hint (a file's Check item or a chunk's note), if any. */
@@ -65,6 +68,7 @@ export function useWalkthroughs(
 
   const [preparing, setPreparing] = useState<{ done: number; total: number } | null>(null)
 
+  const aiInUse = useAiInUse(repo)
   const [ratings, setRatings] = useState<Map<string, HintVerdict>>(new Map())
   const toMap = (list: HintFeedback[]) => new Map(list.map((f) => [f.id, f.verdict]))
   useEffect(() => {
@@ -177,7 +181,7 @@ export function useWalkthroughs(
     }
   }
 
-  return { walk, busy, error, auto, setAuto, explain, preparing, prepareAll, ratings, verdict, rate }
+  return { walk, busy, error, auto, setAuto, explain, preparing, prepareAll, ratings, verdict, rate, account: aiInUse?.account.name ?? null }
 }
 
 export function Elapsed() {
@@ -287,7 +291,7 @@ export function FileCard({
 
       {busy && !brief && (
         <p className="small muted">
-          Claude is reading this file… <Elapsed />
+          Claude{wt.account ? ` (${wt.account})` : ''} is reading this file… <Elapsed />
         </p>
       )}
       {wt.error && !busy && !brief && (
@@ -346,7 +350,8 @@ export function FileCard({
             </div>
           )}
           <p className="small muted">
-            {w.model} · {timeAgo(w.createdAt)} ·{' '}
+            {w.model}
+            {w.account ? ` · ${w.account}` : ''} · {timeAgo(w.createdAt)} ·{' '}
             <button className="link" disabled={busy} onClick={() => wt.explain(file.path, true)}>
               regenerate
             </button>

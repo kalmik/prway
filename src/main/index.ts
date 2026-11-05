@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, Notification, shell } from 'electron'
 import { join } from 'node:path'
 import type {
-  AiSettings,
+  AiAccount,
   AuthState,
   ChangedFile,
   ChangedFunction,
@@ -33,7 +33,8 @@ import { WorktreeManager } from './git/worktrees'
 import { CodeNavigator } from './code/navigator'
 import { KnowledgeBase } from './kb/knowledge'
 import { WorktreeCleanup } from './git/cleanup'
-import { API_KEY_SECRET, getAiSettings, saveAiSettings } from './ai/provider'
+import { aiConfig, aiFor, deleteAccount, linkOrg, saveAccount, setDefaultAccount } from './ai/provider'
+import { claudeSignIn } from './ai/claudeCode'
 import { chat } from './review/chat'
 import { loadFeedback, rateHint } from './review/feedback'
 import { generateBriefing, loadBriefing } from './trace/briefing'
@@ -292,18 +293,16 @@ function registerIpc(): void {
   handle('notifications:list', () => poller?.list() ?? [])
   handle('notifications:markRead', (id: string) => poller?.markRead(id))
 
-  handle('ai:getSettings', () => getAiSettings())
-  handle('ai:saveSettings', (settings: Omit<AiSettings, 'hasApiKey'>, apiKey?: string | null) => {
-    saveAiSettings(settings)
-    if (apiKey === null) clearSecret(API_KEY_SECRET)
-    else if (typeof apiKey === 'string' && apiKey.trim()) {
-      if (!saveSecret(API_KEY_SECRET, apiKey.trim())) throw new Error('No system keyring available to store the API key safely.')
-    }
-    return getAiSettings()
-  })
-  handle('ai:test', async () => {
+  handle('ai:config', () => aiConfig())
+  handle('ai:saveAccount', (account: Omit<AiAccount, 'hasApiKey'>, apiKey?: string | null) => saveAccount(account, apiKey))
+  handle('ai:deleteAccount', (id: string) => deleteAccount(id))
+  handle('ai:setDefault', (id: string) => setDefaultAccount(id))
+  handle('ai:linkOrg', (org: string, accountId: string | null) => linkOrg(org, accountId))
+  handle('ai:inspectClaudeDir', (dir: string | null) => claudeSignIn(dir))
+  handle('ai:forRepo', (repo: string) => aiFor(repo))
+  handle('ai:test', async (accountId: string) => {
     try {
-      return { ok: true, detail: await testProvider() }
+      return { ok: true, detail: await testProvider(accountId) }
     } catch (err) {
       return { ok: false, detail: (err as Error).message }
     }

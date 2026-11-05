@@ -2723,3 +2723,104 @@ textarea.mono {
   opacity: 0.35;
   cursor: default;
 }
+
+/* ---- AI accounts ---- */
+.ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 340px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.ai-badge:hover {
+  border-color: var(--accent);
+}
+.ai-badge.compact {
+  max-width: 160px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+  align-self: center;
+}
+.ai-badge-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.msg-via {
+  margin-top: 4px;
+  font-size: 11px;
+}
+.account-list {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.account-card {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+}
+.account-card .row {
+  gap: 8px;
+  align-items: center;
+}
+.account-card p {
+  margin: 4px 0 0;
+}
+.account-editor {
+  margin-top: 12px;
+  padding: 12px;
+}
+.account-editor h4 {
+  margin: 0 0 8px;
+}
+.account-editor .field code {
+  user-select: all;
+}
+.org-table {
+  width: 100%;
+  margin: 10px 0;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.org-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.org-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.org-table tr.current td {
+  background: var(--bg-active);
+}
+.org-table select {
+  width: 100%;
+}
+/* In the PR's details line: reads like text, still clickable. */
+.ai-badge.inline {
+  display: inline-flex;
+  vertical-align: baseline;
+  max-width: none;
+  padding: 0 8px;
+  font-size: inherit;
+  line-height: 18px;
+}

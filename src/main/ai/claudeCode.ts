@@ -4,10 +4,11 @@
 // PR's checkout when the request asks for code access (the chat).
 
 import { spawn } from 'node:child_process'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { dataDir } from '../store'
+import type { ClaudeSignIn } from '../../shared/types'
 import type { AiProvider, StructuredRequest } from './provider'
 
 const TIMEOUT_MS = 15 * 60 * 1000
@@ -19,25 +20,47 @@ interface CliResult {
   structured_output?: unknown
 }
 
-/**
- * Picks the Claude Code account for reviews. By default `claude` inherits CLAUDE_CONFIG_DIR from
- * PRway's own environment. PRWAY_CLAUDE_CONFIG_DIR overrides it for reviews only; set it to
- * ~/.claude for the default account (the variable is then removed, as Claude Code expects).
- */
-function claudeEnv(): NodeJS.ProcessEnv {
-  const override = process.env.PRWAY_CLAUDE_CONFIG_DIR
-  if (!override) return process.env
+const DEFAULT_DIR = join(homedir(), '.claude')
+
+/** A config folder as Claude Code would use it: `dir` (with ~), else CLAUDE_CONFIG_DIR, else ~/.claude. */
+export function resolveClaudeDir(dir: string | null): string {
+  const raw = dir?.trim() || process.env.CLAUDE_CONFIG_DIR || DEFAULT_DIR
+  return resolve(raw.replace(/^~(?=$|\/)/, homedir()))
+}
+
+/** The environment for `claude` with an account's config folder (~/.claude is the default: no variable). */
+function claudeEnv(dir: string | null): NodeJS.ProcessEnv {
+  const resolved = resolveClaudeDir(dir)
   const env = { ...process.env }
-  const dir = resolve(override.replace(/^~(?=$|\/)/, homedir()))
-  if (dir === join(homedir(), '.claude')) delete env.CLAUDE_CONFIG_DIR
-  else env.CLAUDE_CONFIG_DIR = dir
+  if (resolved === DEFAULT_DIR) delete env.CLAUDE_CONFIG_DIR
+  else env.CLAUDE_CONFIG_DIR = resolved
   return env
+}
+
+/**
+ * Who a config folder is signed in as, from Claude Code's own state file (~/.claude.json for the default folder,
+ * <folder>/.claude.json otherwise). Only for display; nothing secret is read.
+ */
+export function claudeSignIn(dir: string | null): ClaudeSignIn {
+  const resolved = resolveClaudeDir(dir)
+  const file = resolved === DEFAULT_DIR ? join(homedir(), '.claude.json') : join(resolved, '.claude.json')
+  try {
+    const account = (JSON.parse(readFileSync(file, 'utf8')) as { oauthAccount?: { emailAddress?: string; organizationName?: string } })
+      .oauthAccount
+    return { dir: resolved, email: account?.emailAddress ?? null, organization: account?.organizationName ?? null }
+  } catch {
+    return { dir: resolved, email: null, organization: null }
+  }
 }
 
 export class ClaudeCodeProvider implements AiProvider {
   readonly id = 'claude-code' as const
 
-  constructor(private command = process.env.PRWAY_CLAUDE_BIN || 'claude') {}
+  constructor(
+    /** The account's config folder (null: Claude Code's default). */
+    private configDir: string | null = null,
+    private command = process.env.PRWAY_CLAUDE_BIN || 'claude'
+  ) {}
 
   generate<T>(req: StructuredRequest): Promise<T> {
     const args = [
@@ -61,7 +84,7 @@ export class ClaudeCodeProvider implements AiProvider {
     mkdirSync(cwd, { recursive: true })
 
     return new Promise<T>((resolve, reject) => {
-      const child = spawn(this.command, args, { cwd, env: claudeEnv(), stdio: ['pipe', 'pipe', 'pipe'] })
+      const child = spawn(this.command, args, { cwd, env: claudeEnv(this.configDir), stdio: ['pipe', 'pipe', 'pipe'] })
       let stdout = ''
       let stderr = ''
       const timer = setTimeout(() => {

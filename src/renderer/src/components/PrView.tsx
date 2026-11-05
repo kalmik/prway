@@ -33,6 +33,7 @@ import { GuidePanel } from './GuidePanel'
 import { BackgroundPanel } from './BackgroundPanel'
 import { ReviewBox } from './ReviewBox'
 import { threadGroup, ThreadsPanel } from './ThreadsPanel'
+import { AiBadge, useAiInUse } from './AiAccounts'
 import { FileBrief, FinishStep, OverviewStep, ReviewOutline, type Step } from './Guided'
 import { approvalKey, hunkAnchor, ReviewPanel, useWalkthroughs, type ReviewFlow } from './ReviewPanel'
 
@@ -277,6 +278,7 @@ export function PrView({
     reviewing && stepIndex >= 0 ? (steps.slice(stepIndex + 1).find((f) => hunks?.[f.path]?.length)?.path ?? null) : null,
     stepPaths
   )
+  const aiInUse = useAiInUse(repo)
   // The guide's focus lines on the open file, minus the ones you marked as noise.
   const shownGuideFile = useMemo(
     () => guideFile && { ...guideFile, focus: guideFile.focus.filter((f) => wt.verdict('focus', guideFile.path, f.note) !== 'noise') },
@@ -804,6 +806,7 @@ export function PrView({
                 error={guideError}
                 onGenerate={generateGuide}
                 onGoTo={(p, l) => openAt(p, l)}
+                account={aiInUse?.account.name}
               />
             )}
             {visibleTab === 'threads' && (
@@ -863,6 +866,7 @@ export function PrView({
                 onOpenUrl={(u) => void api.openExternal(u)}
                 onClear={() => setChatLog([])}
                 onAsk={ask}
+                account={aiInUse?.account.name}
               />
             )}
             </ErrorBoundary>
@@ -875,6 +879,7 @@ export function PrView({
           focus={chatFocus}
           onRemoveRef={(r) => setChatRefs((refs) => refs.filter((x) => x !== r))}
           onOpenRef={(r) => openAt(r.path, r.startLine, r.side === 'base' ? 'LEFT' : 'RIGHT')}
+          badge={<AiBadge repo={repo} compact />}
         />
       </div>
     )
@@ -893,6 +898,8 @@ export function PrView({
               {pull.author} wants to merge <code>{pull.headRef}</code> into <code>{pull.baseRef}</code> ·{' '}
               <span className="add">+{pull.additions}</span> <span className="del">−{pull.deletions}</span> · {pull.changedFiles} files
               {openThreads > 0 && ` · ${openThreads} open thread${openThreads > 1 ? 's' : ''}`}
+              {' · '}
+              <AiBadge repo={repo} inline />
             </p>
           )}
         </div>

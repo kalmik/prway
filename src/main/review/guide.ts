@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { ChangedFile, PullDetail, ReviewGuide } from '../../shared/types'
-import { getAiSettings, getProvider } from '../ai/provider'
+import { accountById, getAiSettings, getProvider } from '../ai/provider'
 import type { GitHub } from '../github/api'
 import type { WorktreeManager } from '../git/worktrees'
 import type { CodeNavigator } from '../code/navigator'
@@ -126,8 +126,8 @@ export async function relatedKnowledge(navigator: CodeNavigator, kb: KnowledgeBa
 }
 
 export async function generateGuide(deps: GuideDeps, pull: PullDetail, files: ChangedFile[], headSha: string): Promise<ReviewGuide> {
-  const settings = getAiSettings()
-  const provider = getProvider(settings.provider)
+  const settings = getAiSettings(pull.repo)
+  const provider = getProvider(settings)
   const { review, prompt, truncatedFiles } = await prMaterial(deps, pull, files)
 
   const instructions = systemPrompt('guide', pull.repo, deps.worktrees.rulesOrNull(pull.repo, pull.number))
@@ -160,6 +160,7 @@ export async function generateGuide(deps: GuideDeps, pull: PullDetail, files: Ch
     headSha,
     provider: settings.provider,
     model: settings.model,
+    account: settings.account.name,
     createdAt: new Date().toISOString(),
     truncatedFiles,
     promptHash: instructions.hash
@@ -170,10 +171,10 @@ export async function generateGuide(deps: GuideDeps, pull: PullDetail, files: Ch
   return guide
 }
 
-/** A tiny request to check that the selected provider and model work. */
-export async function testProvider(): Promise<string> {
-  const settings = getAiSettings()
-  const answer = await getProvider(settings.provider).generate<{ ok: boolean }>({
+/** A tiny request to check that an AI account and its model work. */
+export async function testProvider(accountId: string): Promise<string> {
+  const settings = accountById(accountId)
+  const answer = await getProvider(settings).generate<{ ok: boolean }>({
     system: 'Answer with the JSON object requested.',
     prompt: 'Return {"ok": true}.',
     schema: { type: 'object', additionalProperties: false, required: ['ok'], properties: { ok: { type: 'boolean' } } },
@@ -181,5 +182,5 @@ export async function testProvider(): Promise<string> {
     effort: 'low'
   })
   if (!answer.ok) throw new Error('Unexpected answer from the model')
-  return `${settings.provider === 'claude-code' ? 'Claude Code (subscription)' : 'Anthropic API'} works with ${settings.model}.`
+  return `${settings.account.name} works (${settings.provider === 'claude-code' ? 'Claude Code subscription' : 'Anthropic API'}, ${settings.model}).`
 }

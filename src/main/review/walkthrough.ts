@@ -141,9 +141,9 @@ export class Walkthroughs {
       this.functionsAround(repo, headSha, path, hunks).catch(() => '')
     ])
     const briefing = loadBriefing(repo, number, headSha)
-    const settings = getAiSettings()
+    const settings = getAiSettings(repo)
     const instructions = systemPrompt('walkthrough', repo, this.worktrees.prRefs(repo, number).rules)
-    const answer = await getProvider(settings.provider).generate<ModelWalkthrough>({
+    const answer = await getProvider(settings).generate<ModelWalkthrough>({
       system: instructions.system,
       prompt: buildWalkthroughPrompt({
         title: pull.title,
@@ -172,6 +172,7 @@ export class Walkthroughs {
       refs: await this.existingRefs(repo, headSha, answer.refs.slice(0, 6)),
       hunks: normalizeHunks(answer.hunks, hunks),
       model: settings.model,
+      account: settings.account.name,
       createdAt: new Date().toISOString()
     }
     const out = cachePath(repo, number, headSha, path, instructions)

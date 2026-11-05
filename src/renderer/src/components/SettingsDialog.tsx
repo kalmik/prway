@@ -1,10 +1,10 @@
-// Settings page: AI provider and model, and per-repository review prompts.
+// Settings page: AI accounts, which account each organization uses, and per-repository review prompts.
 
 import { useState } from 'react'
-import { AiSettingsDialog } from './AiSettingsDialog'
+import { AiAccountsSettings, AiOrgsSettings } from './AiAccounts'
 import { PromptSettings } from './PromptSettings'
 
-export type SettingsTab = 'ai' | 'prompts'
+export type SettingsTab = 'ai' | 'orgs' | 'prompts'
 
 export function SettingsDialog({ tab: initialTab, repo, onClose }: { tab: SettingsTab; repo: string | null; onClose: () => void }) {
   const [tab, setTab] = useState<SettingsTab>(initialTab)
@@ -19,14 +19,19 @@ export function SettingsDialog({ tab: initialTab, repo, onClose }: { tab: Settin
         </div>
         <div className="tabs settings-tabs">
           <button className={tab === 'ai' ? 'active' : ''} onClick={() => setTab('ai')}>
-            AI
+            AI accounts
+          </button>
+          <button className={tab === 'orgs' ? 'active' : ''} onClick={() => setTab('orgs')}>
+            Organizations
           </button>
           <button className={tab === 'prompts' ? 'active' : ''} onClick={() => setTab('prompts')}>
             Review prompts
           </button>
         </div>
         <div className="settings-body">
-          {tab === 'ai' ? <AiSettingsDialog embedded onClose={onClose} /> : <PromptSettings initialRepo={repo} />}
+          {tab === 'ai' && <AiAccountsSettings />}
+          {tab === 'orgs' && <AiOrgsSettings repo={repo} />}
+          {tab === 'prompts' && <PromptSettings initialRepo={repo} />}
         </div>
       </div>
     </div>

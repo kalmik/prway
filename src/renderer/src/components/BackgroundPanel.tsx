@@ -110,7 +110,7 @@ export function BackgroundPanel({
       <div className="row bg-head">
         <span className="spacer small muted">
           {briefing
-            ? `Traced ${briefing.stats.nodes} functions${briefing.stats.traceSeconds !== undefined ? ` in ${briefing.stats.traceSeconds}s` : ''} · ${briefing.stats.cardsReused} cards reused, ${briefing.stats.cardsNew} new · ${briefing.stats.seconds}s in total · ${briefing.model} · ${timeAgo(briefing.createdAt)}`
+            ? `Traced ${briefing.stats.nodes} functions${briefing.stats.traceSeconds !== undefined ? ` in ${briefing.stats.traceSeconds}s` : ''} · ${briefing.stats.cardsReused} cards reused, ${briefing.stats.cardsNew} new · ${briefing.stats.seconds}s in total · ${briefing.model}${briefing.account ? ` via ${briefing.account}` : ''} · ${timeAgo(briefing.createdAt)}`
             : 'How the code this PR changes worked before, and why.'}
           {outdated && <span className="tag pending">{briefing.headSha !== headSha ? 'new commits since' : 'guide changed since'}</span>}
         </span>

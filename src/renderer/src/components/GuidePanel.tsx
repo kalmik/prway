@@ -4,6 +4,8 @@ import { timeAgo } from '../util'
 import { Markdown } from './Markdown'
 
 interface Props {
+  /** The AI account that generates it (its name). */
+  account?: string
   guide: ReviewGuide | null
   /** The guide was made for an older head commit. */
   stale: boolean
@@ -29,7 +31,7 @@ function Elapsed() {
   return <span>{s}s</span>
 }
 
-export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo }: Props) {
+export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo, account }: Props) {
   const fileName = (p: string) => p.split('/').pop()
 
   return (
@@ -37,7 +39,7 @@ export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo }: Pr
       <div className="guide-header">
         <span className="small muted">
           {guide
-            ? `${guide.model} via ${guide.provider === 'claude-code' ? 'Claude Code' : 'Anthropic API'} · ${timeAgo(guide.createdAt)}`
+            ? `${guide.model} via ${guide.account ?? (guide.provider === 'claude-code' ? 'Claude Code' : 'Anthropic API')} · ${timeAgo(guide.createdAt)}`
             : 'AI summary of the intent and the reading order'}
         </span>
         <button className={guide ? '' : 'primary'} disabled={busy} onClick={onGenerate}>
@@ -47,7 +49,7 @@ export function GuidePanel({ guide, stale, busy, error, onGenerate, onGoTo }: Pr
 
       {busy && (
         <p className="small muted pad">
-          Claude is reading the PR… <Elapsed /> (large PRs can take a few minutes)
+          Claude{account ? ` (${account})` : ''} is reading the PR… <Elapsed /> (large PRs can take a few minutes)
         </p>
       )}
       {error && <p className="small error pad">{error}</p>}

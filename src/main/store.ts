@@ -7,7 +7,14 @@ import type { AiEffort, AiProviderId, PromptLayer } from '../shared/types'
 
 interface Settings {
   selectedRepo?: string
+  /** Before AI accounts: the one provider for everything (migrated into the "default" account). */
   ai?: { provider: AiProviderId; model: string; effort: AiEffort }
+  /** AI accounts, the default one and organization links. API keys live in secrets ("anthropic-api-key-<id>"). */
+  aiAccounts?: {
+    accounts: { id: string; name: string; provider: AiProviderId; claudeConfigDir: string | null; model: string; effort: AiEffort }[]
+    defaultAccount: string
+    orgs: Record<string, string>
+  }
   /** Prompt customisation: "*" for all repositories, or "owner/name". */
   prompts?: Record<string, PromptLayer>
 }
