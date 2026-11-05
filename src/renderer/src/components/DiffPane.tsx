@@ -465,10 +465,11 @@ export function DiffPane(props: Props) {
   // ---- Hidden unchanged lines: "+10 lines" and "Show all" on Monaco's folded-region bar ----
   // Monaco's bar only unfolds everything (its thin top/bottom edges reveal more, but nobody finds them). The buttons
   // drive those same edges: a click on an edge reveals `revealLineCount` lines from that side.
+  // Only on the new side's bar: it shows in both layouts, while the old side is squeezed to a sliver in the inline view
+  // (and side by side, both bars fold the same region).
   useEffect(() => {
-    const de = diffEditorRef.current
-    if (!de || !modified) return
-    const root = de.getContainerDomNode()
+    const root = modified?.getDomNode()
+    if (!modified || !root) return
     const click = (el: Element | null) => {
       if (!el) return
       el.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true, cancelable: true }))
@@ -487,9 +488,8 @@ export function DiffPane(props: Props) {
         more.onclick = (e) => {
           e.stopPropagation()
           // At the start of the file the change is below: reveal from the bottom edge, else from the top edge.
-          const ed = original?.getDomNode()?.contains(bar) ? original : modified
-          const box = ed.getDomNode()?.getBoundingClientRect()
-          const atStart = !!box && bar.getBoundingClientRect().top - (box.top + ed.getTopForLineNumber(1) - ed.getScrollTop()) < 4
+          const box = root.getBoundingClientRect()
+          const atStart = bar.getBoundingClientRect().top - (box.top + modified.getTopForLineNumber(1) - modified.getScrollTop()) < 4
           click(bar.querySelector(atStart ? ':scope > .bottom' : ':scope > .top'))
         }
         const all = document.createElement('button')
@@ -505,12 +505,11 @@ export function DiffPane(props: Props) {
       }
     }
     decorate()
-    // The bars are overlay widgets: watch only those layers (the rest of the editor changes on every scroll).
+    // The bars are overlay widgets: watch only that layer (the rest of the editor changes on every scroll).
     const obs = new MutationObserver(decorate)
-    const layers = root.querySelectorAll('.overlayWidgets')
-    for (const l of layers.length ? layers : [root]) obs.observe(l, { childList: true, subtree: true })
+    obs.observe(root.querySelector('.overlayWidgets') ?? root, { childList: true, subtree: true })
     return () => obs.disconnect()
-  }, [modified, original])
+  }, [modified])
 
   // ---- Scroll to a requested line ----
   // The diff is computed asynchronously, and folding unchanged regions moves lines around:
