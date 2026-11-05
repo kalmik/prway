@@ -7,7 +7,7 @@ import { errorText, timeAgo } from '../util'
 
 const api = window.prway
 
-const KIND: Record<HintFeedback['kind'], string> = { check: 'file check', note: 'chunk note', focus: 'focus line' }
+const KIND: Record<HintFeedback['kind'], string> = { check: 'file check', note: 'chunk note', focus: 'focus line', finding: 'review finding' }
 
 export function LearnedSettings({ repo: initialRepo }: { repo: string | null }) {
   const [repo, setRepo] = useState(initialRepo ?? '')

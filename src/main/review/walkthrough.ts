@@ -168,7 +168,8 @@ export class Walkthroughs {
       path,
       headSha,
       summary: answer.summary,
-      hints: answer.hints.slice(0, 4),
+      // Problems come from the AI review (findings); walkthroughs only explain.
+      hints: [],
       refs: await this.existingRefs(repo, headSha, answer.refs.slice(0, 6)),
       hunks: normalizeHunks(answer.hunks, hunks),
       model: settings.model,

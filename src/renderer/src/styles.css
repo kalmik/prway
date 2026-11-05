@@ -2988,3 +2988,128 @@ textarea.mono {
 .settings-dialog {
   text-align: left;
 }
+
+/* ---- AI review findings ---- */
+.review-status {
+  margin: 12px 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+}
+.review-status h4 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.review-status p {
+  margin: 6px 0 0;
+}
+.review-count {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.review-count.high {
+  color: var(--risk-high);
+  border-color: var(--risk-high);
+}
+.review-count.some {
+  color: var(--risk-medium);
+  border-color: var(--risk-medium);
+}
+.review-count.none {
+  color: var(--add);
+  border-color: var(--add);
+}
+.review-verdict {
+  font-style: italic;
+}
+.finding-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.finding {
+  padding: 6px 8px 6px 10px;
+  border-left: 3px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  white-space: normal;
+}
+.finding.sev-high {
+  border-left-color: var(--risk-high);
+}
+.finding.sev-medium {
+  border-left-color: var(--risk-medium);
+}
+.finding.sev-low {
+  border-left-color: var(--risk-low);
+}
+.finding + .finding {
+  margin-top: 6px;
+}
+.finding-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.finding-head .risk-tag {
+  margin: 0;
+}
+.finding-detail {
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin-top: 2px;
+}
+.finding-detail p {
+  margin: 0;
+}
+.finding-evidence {
+  margin-top: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.finding-flag.sev-high {
+  color: var(--risk-high);
+}
+.finding-flag.sev-medium {
+  color: var(--risk-medium);
+}
+.finding-flag.sev-low {
+  color: var(--muted);
+}
+/* The AI review's "what to look at" on a chunk that needs you. */
+.chunk-look {
+  color: var(--text);
+}
+p.chunk-look {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+.finding-mini {
+  color: var(--risk-high);
+  font-size: 11px;
+  margin-left: 4px;
+}
+.chunk-banner.has-findings.sev-high {
+  border-color: var(--risk-high);
+}
+.chunk-banner.has-findings.sev-medium {
+  border-color: var(--risk-medium);
+}
+.file-findings {
+  margin: 4px 0 8px;
+}
+.file-findings h4 {
+  margin: 0 0 6px;
+}
+.chunk-banner-note .finding {
+  margin-bottom: 6px;
+}

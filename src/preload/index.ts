@@ -113,6 +113,10 @@ const api: PrwayApi = {
   onNotifications: (cb) => subscribe<PrNotification[]>('notifications', cb),
   onOpenPr: (cb) => subscribe<OpenPrRequest>('open-pr', cb),
   onBriefingProgress: (cb) => subscribe<{ pr: string; step: string }>('briefing:progress', cb),
+  findings: {
+    get: call('findings:get'),
+    generate: call('findings:generate')
+  },
   setup: {
     check: call('setup:check'),
     fixGit: call('setup:fixGit'),

@@ -3,13 +3,14 @@
 
 import { DiffEditor } from '@monaco-editor/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangedFile, DiffSide, DraftComment, FileDiff, GuideFile, HintFeedback, HintVerdict, Hunk, HunkAuto, ReviewThread, WorktreeInfo } from '../../../shared/types'
+import type { ChangedFile, DiffSide, DraftComment, FileDiff, GuideFile, HintFeedback, HintVerdict, Hunk, HunkAuto, ReviewFinding, ReviewThread, WorktreeInfo } from '../../../shared/types'
 import { languageFor, monaco, MONO_FONT } from '../monaco'
 import { attachCodeNav, linesRef, type NavHandlers } from './codeNav'
 import { attachLineMenu, copyReference, LineMenu, type LineMenuAt } from './LineMenu'
 import { LineComments, useViewZones, type CommentActions, type ZoneSpec } from './Comments'
 import { Markdown } from './Markdown'
-import { autoLabel, hunkAnchor, hunkRange, RatedHint } from './ReviewPanel'
+import { autoLabel, hunkAnchor, hunkRange, RatedHint, type Walkthroughs } from './ReviewPanel'
+import { FindingItem } from './Findings'
 import { storage } from '../util'
 
 type CodeEditor = monaco.editor.IStandaloneCodeEditor
@@ -37,13 +38,15 @@ export interface HunkMark {
   auto?: HunkAuto
   /** The walkthrough's note on the chunk, if any. */
   summary?: string
-  notes?: string[]
   risk?: 'low' | 'medium' | 'high'
   /** Chunks still waiting for you in this file (not pre-approved, not approved). */
   left?: number
-  /** Your rating of a sentence of the note, and how to rate it. */
-  feedbackOf?: (text: string) => Pick<HintFeedback, 'verdict' | 'comment'> | undefined
-  rate?: (text: string, verdict: HintVerdict | null, comment?: string | null) => void
+  /** The AI review's findings in this chunk. */
+  findings?: ReviewFinding[]
+  /** What the AI review says to look at in a chunk that needs you. */
+  look?: string
+  /** For rating the note and the findings (👎 + your reason). */
+  wt?: Walkthroughs
 }
 
 /** Lines a chunk covers on the side it is shown on (removed-only chunks live on the left). */
@@ -68,15 +71,20 @@ interface BannerProps {
   onToggleApprove: () => void
   onComment: () => void
   onMove?: (delta: 1 | -1) => void
-  onCodeRef: (path: string, line: number) => void
+  onCodeRef: (path: string, line: number | null) => void
+  path: string
 }
 
 /** The bar shown just above the current chunk, in the code: what it is, its note (collapsed) and the actions. */
-function ChunkBanner({ mark, open, onOpenChange, onApproveNext, onToggleApprove, onComment, onMove, onCodeRef }: BannerProps) {
+function ChunkBanner({ mark, open, onOpenChange, onApproveNext, onToggleApprove, onComment, onMove, onCodeRef, path }: BannerProps) {
   const h = mark.hunk
-  const hasNote = !!mark.summary || !!mark.notes?.length
+  const findings = mark.findings ?? []
+  const look = !mark.auto && !mark.approved ? mark.look : undefined
+  const hasNote = !!mark.summary || findings.length > 0 || !!look
+  // The worst finding decides the bar's colour; findings show even when the note is closed.
+  const worst = findings[0]?.severity
   return (
-    <div className={`chunk-banner ${mark.approved ? 'approved' : ''} ${open ? 'open' : ''}`}>
+    <div className={`chunk-banner ${mark.approved ? 'approved' : ''} ${open ? 'open' : ''} ${worst ? `has-findings sev-${worst}` : ''}`}>
       <div className="chunk-banner-row">
         {hasNote ? (
           <button
@@ -98,7 +106,16 @@ function ChunkBanner({ mark, open, onOpenChange, onApproveNext, onToggleApprove,
         {mark.risk && mark.risk !== 'low' && <span className={`risk-tag risk-${mark.risk}`}>{mark.risk}</span>}
         {hasNote && !open && (
           <button className="link chunk-banner-summary" onClick={() => onOpenChange(true)} title="Show the note on this chunk">
-            {mark.summary ? firstLine(mark.summary) : 'Notes'}
+            {findings.length ? (
+              <span className={`finding-flag sev-${worst}`}>
+                ⚠ {findings[0].title}
+                {findings.length > 1 && <span className="muted"> +{findings.length - 1}</span>}
+              </span>
+            ) : look ? (
+              <span className="chunk-look">Check: {look}</span>
+            ) : (
+              firstLine(mark.summary ?? '')
+            )}
           </button>
         )}
         {/* Pushed right; on a narrow bar the note's first line wraps below everything else. */}
@@ -134,21 +151,22 @@ function ChunkBanner({ mark, open, onOpenChange, onApproveNext, onToggleApprove,
       </div>
       {open && hasNote && (
         <div className="chunk-banner-note">
+          {findings.map((f) => (
+            <FindingItem key={f.id} finding={f} wt={mark.wt} onGoTo={onCodeRef} />
+          ))}
+          {look && !findings.length && (
+            <p className="chunk-look" title="Why the AI review left this chunk for you">
+              Check: {look}
+            </p>
+          )}
           {mark.summary && (
-            <RatedHint text={mark.summary} feedback={mark.feedbackOf?.(mark.summary)} onRate={(v, c) => mark.rate?.(mark.summary!, v, c)}>
+            <RatedHint
+              text={mark.summary}
+              feedback={mark.wt?.feedbackOf('note', path, mark.summary)}
+              onRate={(v, c) => mark.wt?.rate('note', path, mark.summary!, v, c)}
+            >
               <Markdown text={mark.summary} onCodeRef={onCodeRef} />
             </RatedHint>
-          )}
-          {!!mark.notes?.length && (
-            <ul className="bullets small">
-              {mark.notes.map((n, i) => (
-                <li key={i}>
-                  <RatedHint text={n} feedback={mark.feedbackOf?.(n)} onRate={(v, c) => mark.rate?.(n, v, c)}>
-                    <Markdown text={n} onCodeRef={onCodeRef} />
-                  </RatedHint>
-                </li>
-              ))}
-            </ul>
           )}
         </div>
       )}
@@ -601,7 +619,8 @@ export function DiffPane(props: Props) {
             onToggleApprove={() => latest.current.onToggleApprove?.(h)}
             onComment={() => commentOnChunk(h)}
             onMove={props.onMoveChunk ? (d) => latest.current.onMoveChunk?.(d) : undefined}
-            onCodeRef={(p, l) => latest.current.actions.onCodeRef(p, l)}
+            onCodeRef={(p, l) => latest.current.actions.onCodeRef(p, l ?? 1)}
+            path={file.path}
           />
         )
       }

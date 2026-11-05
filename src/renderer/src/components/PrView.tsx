@@ -12,6 +12,7 @@ import type {
   HunkAuto,
   GuideFile,
   Briefing,
+  PrReview,
   PullDetail,
   ReviewGuide,
   ReviewThread,
@@ -34,6 +35,7 @@ import { BackgroundPanel } from './BackgroundPanel'
 import { ReviewBox } from './ReviewBox'
 import { threadGroup, ThreadsPanel } from './ThreadsPanel'
 import { AiBadge, useAiInUse } from './AiAccounts'
+import { findingsIn, type ReviewState } from './Findings'
 import { FileBrief, FinishStep, OverviewStep, ReviewOutline, type Step } from './Guided'
 import { approvalKey, hunkAnchor, ReviewPanel, useWalkthroughs, type ReviewFlow } from './ReviewPanel'
 
@@ -118,6 +120,23 @@ export function PrView({
 
   const [guide, setGuide] = useState<ReviewGuide | null>(null)
   const [briefing, setBriefing] = useState<Briefing | null>(null)
+  // The AI review (findings): runs after the guide, once per head commit.
+  const [prReview, setPrReview] = useState<PrReview | null>(null)
+  const [reviewBusy, setReviewBusy] = useState(false)
+  const [reviewError, setReviewError] = useState<string | null>(null)
+  const [autoReview, setAutoReview] = useStored('ui.autoReview', true)
+  const runReview = useCallback(
+    (force: boolean) => {
+      setReviewBusy(true)
+      setReviewError(null)
+      api.findings
+        .generate(repo, number, force)
+        .then(setPrReview, (err) => setReviewError(errorText(err)))
+        .finally(() => setReviewBusy(false))
+    },
+    [repo, number]
+  )
+  const reviewState: ReviewState = { review: prReview, busy: reviewBusy, error: reviewError, run: runReview, auto: autoReview, setAuto: setAutoReview }
   const [guideBusy, setGuideBusy] = useState(false)
   const [guideError, setGuideError] = useState<string | null>(null)
 
@@ -203,6 +222,10 @@ export function PrView({
             const saved = await api.guide.get(repo, number)
             setGuide(saved)
             api.briefing.get(repo, number).then(setBriefing, () => setBriefing(null))
+            // The review follows the guide: load it, or start it when the guide is current and it's missing.
+            const review = await api.findings.get(repo, number).catch(() => null)
+            setPrReview(review)
+            if (!review && saved?.headSha === t.headSha && autoReview) runReview(false)
             // Stay on the file you were reading, else the first file of the reading order, else the first file that isn't noise.
             // A new object is set even for the same path so its diff is reloaded.
             const last = storage.get<string | null>(`file:${prKey}`, null)
@@ -295,26 +318,42 @@ export function PrView({
   const [overrideList, setOverrideList] = useStored<string[]>(`reviewAuto:${prKey}`, [])
   const manual = useMemo(() => new Set(manualList), [manualList])
   const overrides = useMemo(() => new Set(overrideList), [overrideList])
+  // Business rules alone: the AI review's pass never outranks them.
+  const rules = useMemo(() => coreSpans(null, guide, ''), [guide])
   const allAutoReasons = useMemo(() => {
     const m = new Map<string, HunkAuto>()
+    // The AI review of this commit, when it ran, calls every chunk with the whole PR in view: its call decides.
+    const calls =
+      prReview && !prReview.skipped && prReview.chunks && prReview.headSha === tree?.headSha
+        ? new Map(prReview.chunks.map((c) => [approvalKey(c.path, c.hash), c]))
+        : null
     for (const [p, hs] of Object.entries(hunks ?? {})) {
+      const oldPath = tree?.files.find((f) => f.path === p)?.oldPath
       for (const h of hs) {
         const key = approvalKey(p, h.hash)
+        // A chunk with an AI review finding is never pre-approved, whatever the rules say.
+        if (findingsIn(prReview, p, h).length) continue
         if (preRules && h.auto) {
           m.set(key, h.auto)
           continue
         }
+        if (calls) {
+          const c = calls.get(key)
+          if (preAi && c && !c.needsYou && !coreHit(rules.spans, p, h, oldPath))
+            m.set(key, { kind: 'review', reason: `AI review: ${c.reason || 'nothing to check here'}` })
+          continue
+        }
+        // No AI review: the file walkthroughs' calls, kept away from the core of the change.
         const n = wt.walk[p]?.hunks.find((x) => x.hash === h.hash)
         // The core of the change (business rules, traced functions, watch-out lines) is never waved through.
-        const inCore = coreHit(core.spans, p, h, tree?.files.find((f) => f.path === p)?.oldPath)
-        if (inCore) continue
+        if (coreHit(core.spans, p, h, oldPath)) continue
         if (preAi && n?.trivial) m.set(key, { kind: 'ai', reason: n.trivialReason ? `AI: ${n.trivialReason}` : 'AI: trivial' })
         else if (preBackground && core.fresh && n?.risk === 'low')
           m.set(key, { kind: 'background', reason: 'Low risk, outside the core change (Background tab)' })
       }
     }
     return m
-  }, [hunks, wt.walk, preRules, preAi, preBackground, core, tree])
+  }, [hunks, wt.walk, preRules, preAi, preBackground, core, rules, tree, prReview])
   const autoReasons = useMemo(() => new Map([...allAutoReasons].filter(([k]) => !overrides.has(k))), [allAutoReasons, overrides])
   const approved = useMemo(() => new Set([...manual, ...autoReasons.keys()]), [manual, autoReasons])
   const isAuto = (path: string, h: Hunk) => autoReasons.has(approvalKey(path, h.hash))
@@ -517,6 +556,8 @@ export function PrView({
     try {
       const g = await api.guide.generate(repo, number)
       setGuide(g)
+      // Next in the pipeline: the AI review (skipped by itself only when nothing is left to decide).
+      if (autoReview) runReview(false)
       // The worktree was refreshed; pick up new commits if any.
       if (tree && g.headSha !== tree.headSha) setTree(await api.worktree.prepare(repo, number))
     } catch (err) {
@@ -638,16 +679,17 @@ export function PrView({
         left,
         auto: autoReasons.get(approvalKey(file.path, h.hash)),
         summary: note?.summary || undefined,
-        notes: note?.notes,
+        findings: findingsIn(prReview, file.path, h),
+        look: prReview?.chunks?.find((c) => c.path === file.path && c.hash === h.hash && c.needsYou)?.reason || undefined,
         risk: note?.risk,
-        feedbackOf: (text: string) => wt.feedbackOf('note', file.path, text),
-        rate: (text: string, v: HintVerdict | null, c?: string | null) => wt.rate('note', file.path, text, v, c)
+        wt
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [file, hunks, approved, currentHunk, autoReasons, wt.walk, wt.ratings, guided, step, tab, panelOpen])
+  }, [file, hunks, approved, currentHunk, autoReasons, wt.walk, wt.ratings, guided, step, tab, panelOpen, prReview])
 
   const flow: ReviewFlow = {
+    review: prReview,
     steps,
     guideFiles,
     hunks,
@@ -841,7 +883,15 @@ export function PrView({
               />
             )}
             {visibleTab === 'summary' && (
-              <SummaryPanel guide={guide} busy={guideBusy} onGenerate={() => void generateGuide()} onGoTo={(p, l) => openAt(p, l)} />
+              <SummaryPanel
+                guide={guide}
+                busy={guideBusy}
+                review={reviewState}
+                wt={wt}
+                account={aiInUse?.account.name}
+                onGenerate={() => void generateGuide()}
+                onGoTo={(p, l) => openAt(p, l)}
+              />
             )}
             {visibleTab === 'knowledge' && (
               <BackgroundPanel
@@ -1044,6 +1094,7 @@ export function PrView({
                   }}
                   pre={{ rules: preRules, ai: preAi, background: preBackground, hasBriefing: core.fresh, setRules: setPreRules, setAi: setPreAi, setBackground: setPreBackground }}
                   wt={wt}
+                  review={reviewState}
                   stepPaths={stepPaths}
                   repo={repo}
                   onGenerate={generateGuide}

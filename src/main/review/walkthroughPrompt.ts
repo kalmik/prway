@@ -98,12 +98,11 @@ export function parseHunks(diff: string): Map<string, HunkWithText[]> {
   return files
 }
 
-/** What the model returns (see WALKTHROUGH_SCHEMA). */
-export interface ModelWalkthrough extends Pick<FileWalkthrough, 'summary' | 'hints' | 'refs'> {
+/** What the model returns (see WALKTHROUGH_SCHEMA). Problems come from the separate AI review, not from here. */
+export interface ModelWalkthrough extends Pick<FileWalkthrough, 'summary' | 'refs'> {
   hunks: {
     id: number
     summary: string
-    notes: string[]
     risk: FileWalkthrough['hunks'][number]['risk']
     trivial: boolean
     trivialReason: string
@@ -113,23 +112,17 @@ export interface ModelWalkthrough extends Pick<FileWalkthrough, 'summary' | 'hin
 export const WALKTHROUGH_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['summary', 'hints', 'refs', 'hunks'],
+  required: ['summary', 'refs', 'hunks'],
   properties: {
     summary: {
       type: 'string',
       description:
         'Only the behaviour that changes in this file and why it matters, 1-2 short sentences. Empty string when nothing here changes behaviour. Never describe code the reviewer can read in the diff.'
     },
-    hints: {
-      type: 'array',
-      items: { type: 'string' },
-      description:
-        'Up to 3 concrete risks to check (an edge case that breaks, an affected caller, a missing test, data impact). Only real concerns, no generic advice. Empty when there are none.'
-    },
     refs: {
       type: 'array',
       description:
-        'Up to 4 places worth opening to judge a behaviour change here: affected callers, the code it relies on, its tests. Only paths that appear in the material. Empty when nothing changes behaviour.',
+        'Up to 4 places worth opening to understand a behaviour change here: affected callers, the code it relies on, its tests. Only paths that appear in the material. Empty when nothing changes behaviour.',
       items: {
         type: 'object',
         additionalProperties: false,
@@ -147,17 +140,12 @@ export const WALKTHROUGH_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['id', 'summary', 'notes', 'risk', 'trivial', 'trivialReason'],
+        required: ['id', 'summary', 'risk', 'trivial', 'trivialReason'],
         properties: {
           id: { type: 'integer' },
           summary: {
             type: 'string',
             description: 'The behaviour change in this hunk, one short sentence. Empty string when it does not change behaviour.'
-          },
-          notes: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Up to 2 short concerns that need the reviewer (cite path:line). Empty unless something can go wrong.'
           },
           risk: { type: 'string', enum: ['high', 'medium', 'low'] },
           trivial: {
@@ -172,9 +160,9 @@ export const WALKTHROUGH_SCHEMA = {
   }
 } as const
 
-export const WALKTHROUGH_SYSTEM = `You help a human reviewer get through ONE file of a GitHub pull request, hunk by hunk. The reviewer only wants to spend time where behaviour changes or something can go wrong.
-- Talk only about behaviour changes and real risks. Do not narrate code, restate the diff, or explain obvious changes.
-- When a hunk does not change behaviour (imports, renames, formatting, comments, log wording, test names), leave its summary and notes empty and mark it trivial.
+export const WALKTHROUGH_SYSTEM = `You help a human reviewer get through ONE file of a GitHub pull request, hunk by hunk, by explaining what changes. Finding defects is done by a separate review: here, explain and rate risk only.
+- Say what behaviour changes and why it matters. Do not narrate code, restate the diff, or explain obvious changes.
+- When a hunk does not change behaviour (imports, renames, formatting, comments, log wording, test names), leave its summary empty and mark it trivial.
 - Be terse: short sentences, no filler, no praise, no style nits. Silence is better than padding.
 - Line numbers: hunks are annotated with new-file line numbers ("+  120 |" or "   120 |"). Cite code as path:line using those numbers, or lines from the repository context.
 - You get the whole functions around each hunk, not just the diff context: read them before judging a hunk, and do not say code is cut off or not visible when it is in FULL FUNCTIONS.
@@ -240,7 +228,7 @@ export function normalizeHunks(answer: ModelWalkthrough['hunks'], hunks: Hunk[])
           index: h.index,
           hash: h.hash,
           summary: a.summary,
-          notes: a.notes.slice(0, 3),
+          notes: [],
           risk: a.risk,
           // A "trivial" verdict only counts for low-risk hunks: the two must agree.
           trivial: a.trivial && a.risk === 'low',

@@ -4,6 +4,7 @@ import { fixPath } from './shellPath'
 import { checkSetup, fixGit, installClaude, openClaudeLogin } from './setup'
 import type {
   AiAccount,
+  PrReview,
   AuthState,
   ChangedFile,
   ChangedFunction,
@@ -39,6 +40,7 @@ import { aiConfig, aiFor, deleteAccount, linkOrg, saveAccount, setDefaultAccount
 import { claudeSignIn } from './ai/claudeCode'
 import { chat } from './review/chat'
 import { loadFeedback, rateHint, removeFeedback } from './review/feedback'
+import { generateReview, loadReview } from './review/reviewer'
 import { generateBriefing, loadBriefing } from './trace/briefing'
 import { CardStore } from './trace/cards'
 import { Walkthroughs } from './review/walkthrough'
@@ -348,6 +350,27 @@ function registerIpc(): void {
     const { baseSha: _baseSha, ...pull } = await getPull(gh, repo, number, me)
     const tree = await prepare(repo, number)
     return generateGuide(guideDeps(), pull, tree.files, tree.headSha)
+  })
+
+  handle('findings:get', async (repo: string, number: number) => {
+    const head = worktrees.headSha(repo, number)
+    return head ? loadReview(repo, number, head) : null
+  })
+  // One review per PR at a time (the guide finishing and a click can both start it).
+  const reviewing = new Map<string, Promise<PrReview>>()
+  handle('findings:generate', (repo: string, number: number, force?: boolean) => {
+    const key = `${repo}#${number}`
+    const running = reviewing.get(key)
+    if (running) return running
+    const job = (async () => {
+      const { gh, me } = requireGh()
+      const { baseSha: _baseSha, ...pull } = await getPull(gh, repo, number, me)
+      const tree = await prepared(repo, number)
+      const hunks = await walkthroughs.allHunks(repo, number)
+      return generateReview(guideDeps(), pull, tree.files, loadGuide(repo, number, tree.headSha), hunks, tree.headSha, force)
+    })().finally(() => reviewing.delete(key))
+    reviewing.set(key, job)
+    return job
   })
 
   handle('briefing:get', async (repo: string, number: number) => {

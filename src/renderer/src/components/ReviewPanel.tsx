@@ -1,11 +1,12 @@
-// Review flow pieces: per-file walkthroughs (AI summary, hints, related code, a note per hunk) and the cards
+// Review flow pieces: per-file walkthroughs (AI summary, related code, a note per hunk), the AI review's findings, and the cards
 // that show them. Used by the guided review (the main view) and by the Review tab of the Files view.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { ChangedFile, FileWalkthrough, GuideFile, HintFeedback, HintVerdict, Hunk, HunkAuto } from '../../../shared/types'
+import type { ChangedFile, FileWalkthrough, GuideFile, HintFeedback, HintVerdict, Hunk, HunkAuto, PrReview, ReviewFinding } from '../../../shared/types'
 import { errorText, storage, timeAgo } from '../util'
 import { Markdown } from './Markdown'
 import { useAiInUse } from './AiAccounts'
+import { FindingItem, findingsIn } from './Findings'
 
 const api = window.prway
 
@@ -348,9 +349,12 @@ export function FileCard({
   wt,
   bare,
   brief,
+  findings = [],
   onOpen,
   onOpenUrl
 }: {
+  /** The AI review's findings in this file. */
+  findings?: ReviewFinding[]
   file: ChangedFile
   guideFile?: GuideFile
   wt: Walkthroughs
@@ -398,8 +402,16 @@ export function FileCard({
           <button className="link" onClick={() => wt.explain(file.path, false)}>
             Explain this file
           </button>{' '}
-          to get a summary, hints and a note per chunk.
+          to get a summary of what changes and a note per chunk.
         </p>
+      )}
+      {findings.length > 0 && (
+        <div className="file-findings">
+          <h4>AI review</h4>
+          {findings.map((f) => (
+            <FindingItem key={f.id} finding={f} wt={wt} onGoTo={onOpen} />
+          ))}
+        </div>
       )}
       {w && (
         <div className="file-card-body">
@@ -410,20 +422,6 @@ export function FileCard({
               <p className="small muted">No behaviour change in this file.</p>
             )}
           </div>
-          {w.hints.length > 0 && (
-            <div>
-              <h4>Check</h4>
-              <ul className="bullets small">
-                {w.hints.map((h, i) => (
-                  <li key={i}>
-                    <RatedHint text={h} feedback={wt.feedbackOf('check', file.path, h)} onRate={(v, c) => wt.rate('check', file.path, h, v, c)}>
-                      <Markdown text={h} onCodeRef={codeRef} />
-                    </RatedHint>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
           {w.refs.length > 0 && (
             <div>
               <h4>Related code</h4>
@@ -460,11 +458,12 @@ export const AUTO_LABEL: Record<HunkAuto['kind'], string> = {
   formatting: 'formatting only',
   moved: 'moved code',
   ai: 'AI: trivial',
-  background: 'outside the core change'
+  background: 'outside the core change',
+  review: 'AI review: nothing to check'
 }
 
 /** How a pre-approval is described: AI and background verdicts carry their own reason. */
-export const autoLabel = (a: HunkAuto) => (a.kind === 'ai' || a.kind === 'background' ? a.reason : AUTO_LABEL[a.kind])
+export const autoLabel = (a: HunkAuto) => (a.kind === 'ai' || a.kind === 'background' || a.kind === 'review' ? a.reason : AUTO_LABEL[a.kind])
 
 export function HunkCard({
   path,
@@ -479,10 +478,13 @@ export function HunkCard({
   onCodeRef,
   commentSignal = 0,
   auto,
-  wt
+  wt,
+  findings = []
 }: {
   /** For rating the chunk's note. */
   wt?: Walkthroughs
+  /** The AI review's findings in this chunk. */
+  findings?: ReviewFinding[]
   /** Set when the chunk is pre-approved (rules or AI) rather than approved by you. */
   auto?: HunkAuto
   path: string
@@ -564,17 +566,9 @@ export function HunkCard({
           </RatedHint>
         </div>
       )}
-      {note && note.notes.length > 0 && (
-        <ul className="bullets hunk-notes small">
-          {note.notes.map((n, i) => (
-            <li key={i}>
-              <RatedHint text={n} feedback={wt?.feedbackOf('note', path, n)} onRate={(v, c) => wt?.rate('note', path, n, v, c)}>
-                <Markdown text={n} onCodeRef={onCodeRef} />
-              </RatedHint>
-            </li>
-          ))}
-        </ul>
-      )}
+      {findings.map((f) => (
+        <FindingItem key={f.id} finding={f} wt={wt} onGoTo={(p, l) => onCodeRef(p, l ?? 1)} />
+      ))}
       {writing ? (
         <div className="comment-box">
           <textarea
@@ -609,6 +603,8 @@ export function HunkCard({
 // ---- Review tab (Files view) ----
 
 export interface ReviewFlow {
+  /** The AI review: its findings sit in the chunks and file summaries. */
+  review: PrReview | null
   steps: ChangedFile[]
   guideFiles: Map<string, GuideFile>
   hunks: Record<string, Hunk[]> | null
@@ -672,7 +668,14 @@ export function ReviewPanel({ flow, current, currentHunk }: { flow: ReviewFlow; 
 
       {current && index >= 0 && (
         <>
-          <FileCard file={current} guideFile={guideFiles.get(current.path)} wt={wt} onOpen={flow.onOpen} onOpenUrl={flow.onOpenUrl} />
+          <FileCard
+            file={current}
+            guideFile={guideFiles.get(current.path)}
+            wt={wt}
+            findings={flow.review?.findings.filter((f) => f.path === current.path)}
+            onOpen={flow.onOpen}
+            onOpenUrl={flow.onOpenUrl}
+          />
           <h4>
             Chunks ({fileHunks.filter((h) => approved.has(approvalKey(current.path, h.hash))).length}/{fileHunks.length} approved)
           </h4>
@@ -694,6 +697,7 @@ export function ReviewPanel({ flow, current, currentHunk }: { flow: ReviewFlow; 
                 onComment={(body) => flow.onComment(current.path, h, body)}
                 onCodeRef={codeRef}
                 wt={wt}
+                findings={findingsIn(flow.review, current.path, h)}
               />
             ))}
           </ol>

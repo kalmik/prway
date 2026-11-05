@@ -1,7 +1,9 @@
-// Summary tab: what the PR changes, at a glance. What changed, the business rules it changes (before → after)
-// and changes its stated intent doesn't explain. All from the guide.
+// Summary tab: what the PR changes, at a glance. The AI review's findings, what changed, the business rules it
+// changes (before → after) and changes its stated intent doesn't explain.
 
 import type { ReviewGuide } from '../../../shared/types'
+import { ReviewStatus, type ReviewState } from './Findings'
+import type { Walkthroughs } from './ReviewPanel'
 import { Markdown } from './Markdown'
 
 const fileName = (p: string) => p.split('/').pop() ?? p
@@ -9,11 +11,17 @@ const fileName = (p: string) => p.split('/').pop() ?? p
 export function SummaryPanel({
   guide,
   busy,
+  review,
+  wt,
+  account,
   onGenerate,
   onGoTo
 }: {
   guide: ReviewGuide | null
   busy: boolean
+  review: ReviewState
+  wt: Walkthroughs
+  account?: string
   onGenerate: () => void
   onGoTo: (path: string, line: number | null) => void
 }) {
@@ -31,6 +39,7 @@ export function SummaryPanel({
   }
   return (
     <div className="panel-body summary-panel">
+      <ReviewStatus state={review} account={account} wt={wt} onGoTo={onGoTo} />
       <section>
         <h4>What changed</h4>
         <ul className="bullets">

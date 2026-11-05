@@ -170,6 +170,29 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 - File walkthroughs see the whole functions around each chunk at the PR head (up to 200 lines each, 60k characters
   per file), not just the diff's 3 lines of context, plus the Background briefing when built. Saved under `files-v3`
   (older walkthroughs that only saw the diff context are not reused)
+- AI review (findings), the step after the guide (`src/main/review/reviewer.ts`):
+  - one pass per PR at a head commit, started by itself after the guide (and when a PR with a current guide has none;
+    switch on the overview, on by default); every PR is reviewed whatever its size, skipped only when nothing is left
+    to decide (every file noise, or every chunk passed by the fixed rules), with "Review anyway"
+  - gets the PR material, the guide (intent, risk per file, concepts), the Background and your 👎 reasons, and reads
+    the code itself (the chat's read-only tools on the checkout) to confirm each finding before reporting it
+  - at most 5 findings: file and line in the new code, severity, a short title, what goes wrong, and the lines read to
+    confirm it. Findings on files outside the PR or at lines that don't exist are dropped; each is attached to its chunk
+  - replaces the walkthroughs' hints and chunk concerns: walkthroughs now only explain (summary, risk, trivial)
+  - shown in the overview and the Summary tab (verdict and every finding), in the chunk bar (the first finding's
+    title with ⚠ when closed, all of them when open; the bar takes the severity colour), in the file summary, and as
+    ⚠ in the outline. 👎 with a reason works on findings too
+  - a chunk with a finding is never pre-approved, by rules or AI
+  - it also calls every chunk the fixed rules don't pass: does the reviewer need to read it, given the whole PR?
+    (needs you: logic, data read or written, permissions, money, external calls, errors, concurrency, behaviour config,
+    tests that change an existing expectation; not: docs and API specs describing a code change, tests exercising the
+    new code, fixtures, renames carried through, logging, wiring). When unsure: needs you. A missing call needs you
+  - when the review ran, its calls decide pre-approval ("AI review: <reason>"), ahead of the file walkthroughs'
+    "trivial" and the low-risk-outside-the-core rule, which stay for PRs without a review. Fixed rules still pass
+    their chunks; findings and business rule lines (outside docs files: those only describe the change, whose
+    behaviour is reviewed in the code) always need you. Chunks left for you show the review's "Check: …" note
+  - saved reviews carry a format version; older ones are made again
+  - saved per head commit in `~/.prway/guides/<repo>/pr-<n>/review/<sha>.json`
 - File step: no side panel, everything sits on the diff:
   - the file bar shows the guide's risk badge next to "Side by side"
   - under it, one line from the guide (the file's role and why it matters); "▸ summary · N to check" opens the

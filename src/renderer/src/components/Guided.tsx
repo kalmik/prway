@@ -6,6 +6,7 @@ import { useState, type ReactNode } from 'react'
 import type { ChangedFile, DraftComment, Hunk, PullDetail, ReviewGuide, ReviewThread } from '../../../shared/types'
 import { storage } from '../util'
 import { GuidePanel } from './GuidePanel'
+import { findingsIn, ReviewStatus, type ReviewState } from './Findings'
 import { openSettings } from './SettingsDialog'
 import { Markdown } from './Markdown'
 import {
@@ -107,6 +108,11 @@ export function ReviewOutline({
                   {g && <span className={`risk-dot risk-${g.risk}`} title={`${g.risk} risk`} />}
                   <span className="file-name">{f.path.split('/').pop()}</span>
                   {!!commentCounts.get(f.path) && <span className="comment-count">{commentCounts.get(f.path)}</span>}
+                  {!!flow.review?.findings.some((x) => x.path === f.path) && (
+                    <span className="finding-mini" title="AI review findings in this file">
+                      ⚠
+                    </span>
+                  )}
                   <span className="outline-count">
                     {ok}/{fh.length}
                   </span>
@@ -136,7 +142,13 @@ export function ReviewOutline({
                         <button onClick={() => flow.onShowHunk(f.path, h)} title={note?.summary ?? h.header}>
                           <span className="hunk-range">{hunkRange(h)}</span> <span className="muted">{h.header}</span>
                         </button>
-                        {note && note.risk !== 'low' && <span className={`risk-dot risk-${note.risk}`} />}
+                        {findingsIn(flow.review, f.path, h).length > 0 ? (
+                          <span className="finding-mini" title={findingsIn(flow.review, f.path, h).map((x) => x.title).join('\n')}>
+                            ⚠
+                          </span>
+                        ) : (
+                          note && note.risk !== 'low' && <span className={`risk-dot risk-${note.risk}`} />
+                        )}
                         {auto && <span className="auto-mini">auto</span>}
                       </li>
                     )
@@ -191,6 +203,7 @@ export function OverviewStep({
   stats,
   pre,
   wt,
+  review,
   stepPaths,
   repo,
   onGenerate,
@@ -198,6 +211,7 @@ export function OverviewStep({
   onStart
 }: {
   repo: string
+  review: ReviewState
   guide: ReviewGuide | null
   stale: boolean
   busy: boolean
@@ -218,6 +232,10 @@ export function OverviewStep({
   onGoTo: (path: string, line: number | null) => void
   onStart: () => void
 }) {
+  // Chunks the AI review passed: it decides pre-approval when it ran.
+  const r = review.review
+  const hasCalls = !!(r && !r.skipped && r.chunks)
+  const reviewCalls = hasCalls ? r!.chunks!.filter((c) => !c.needsYou).length : 0
   return (
     <div className="step-page">
       <div className="step-hero">
@@ -240,13 +258,19 @@ export function OverviewStep({
           <input type="checkbox" checked={pre.rules} onChange={(e) => pre.setRules(e.target.checked)} /> Pre-approve chunks that can't
           change behaviour (imports, comments, formatting, moved code)
         </label>
-        <label title="Only low-risk chunks the AI marks trivial, e.g. log wording or a local rename. Needs the file explained.">
-          <input type="checkbox" checked={pre.ai} onChange={(e) => pre.setAi(e.target.checked)} /> Also trust the AI's “trivial” verdicts
-          (low-risk only)
+        <label title="With an AI review: the chunks it says you don't need to read (business rule lines and chunks with a finding always stay). Without one: low-risk chunks a file walkthrough marks trivial, e.g. log wording or a local rename.">
+          <input type="checkbox" checked={pre.ai} onChange={(e) => pre.setAi(e.target.checked)} /> Pre-approve what the AI says you don’t
+          need to read{hasCalls && <span className="muted"> ({reviewCalls} chunks, from the AI review)</span>}
         </label>
-        <label title="Chunks the file walkthrough rates low risk that touch none of the traced core functions, business rules or watch-out lines. The core itself is never pre-approved by the AI.">
-          <input type="checkbox" checked={pre.background} onChange={(e) => pre.setBackground(e.target.checked)} /> Pre-approve low-risk chunks
-          outside the core change{!pre.hasBriefing && <span className="muted"> (build the Background tab first)</span>}
+        {!hasCalls && (
+          <label title="Used when there's no AI review (switched off, or not run yet). Chunks the file walkthrough rates low risk that touch none of the core: the traced functions and watch-out lines (Background tab) and the business rules.">
+            <input type="checkbox" checked={pre.background} onChange={(e) => pre.setBackground(e.target.checked)} /> Pre-approve low-risk
+            chunks outside the core change{!pre.hasBriefing && <span className="muted"> (build the Background tab first)</span>}
+          </label>
+        )}
+        <label title="After the guide, an AI review reads the code looking for real problems and decides, chunk by chunk, what you need to read. Chunks with a finding are never pre-approved. On by default; switch it off to save AI requests.">
+          <input type="checkbox" checked={review.auto} onChange={(e) => review.setAuto(e.target.checked)} /> Review the PR with AI after
+          the guide: it finds problems and picks what you need to read
         </label>
         <span className="muted">
           Review instructions for this repository:{' '}
@@ -254,7 +278,7 @@ export function OverviewStep({
             customise
           </button>
         </span>
-        {pre.ai && (
+        {pre.ai && !hasCalls && (
           <span className="muted">
             {wt.preparing ? (
               `Explaining files in the background${wt.account ? ` (${wt.account})` : ''}… ${wt.preparing.done}/${wt.preparing.total}`
@@ -272,6 +296,7 @@ export function OverviewStep({
           </span>
         )}
       </div>
+      <ReviewStatus state={review} account={wt.account} wt={wt} onGoTo={onGoTo} />
       <GuidePanel guide={guide} stale={stale} busy={busy} error={error} onGenerate={onGenerate} onGoTo={onGoTo} account={wt.account ?? undefined} />
       {!guide && !busy && (
         <p className="small muted">You can also start right away: files are then reviewed in their order, without the AI reading order.</p>
@@ -284,7 +309,7 @@ export function OverviewStep({
 
 /**
  * What the open file is about, under its name in the guided view: one line from the guide (its role and why it
- * matters) with the walkthrough's summary, checks and related code a click away. Chunk notes live in the diff.
+ * matters) with the walkthrough's summary, the AI review's findings and related code a click away. Chunk notes live in the diff.
  */
 export function FileBrief({ flow, file }: { flow: ReviewFlow; file: ChangedFile }) {
   const { steps, hunks, guideFiles, wt } = flow
@@ -297,7 +322,7 @@ export function FileBrief({ flow, file }: { flow: ReviewFlow; file: ChangedFile 
   const g = guideFiles.get(file.path)
   const w = wt.walk[file.path]
   const busy = wt.busy === file.path
-  const checks = w?.hints.length ?? 0
+  const fileFindings = flow.review?.findings.filter((f) => f.path === file.path) ?? []
   const noChunks = !!hunks && !(hunks[file.path] ?? []).length
 
   return (
@@ -331,20 +356,29 @@ export function FileBrief({ flow, file }: { flow: ReviewFlow; file: ChangedFile 
           </span>
         )}
         {!busy && !wt.error && !w && (
-          <button className="link nowrap" onClick={() => wt.explain(file.path, false)} title="A summary, things to check and a note per chunk">
+          <button className="link nowrap" onClick={() => wt.explain(file.path, false)} title="A summary of what changes and a note per chunk">
             Explain this file
           </button>
         )}
-        {w && (
+        {fileFindings.length > 0 && !open && (
+          <button
+            className={`link nowrap finding-flag sev-${fileFindings[0].severity}`}
+            onClick={() => setOpen(true)}
+            title={fileFindings.map((f) => `L${f.line}: ${f.title}`).join('\n')}
+          >
+            ⚠ {fileFindings.length} finding{fileFindings.length > 1 ? 's' : ''}
+          </button>
+        )}
+        {(w || fileFindings.length > 0) && (
           <button className="link nowrap" onClick={() => setOpen(!open)}>
-            {open ? '▾ less' : `▸ summary${checks ? ` · ${checks} to check` : ''}`}
+            {open ? '▾ less' : `▸ summary`}
           </button>
         )}
       </div>
       {noChunks && <p className="small muted">No text changes to approve in this file (binary or renamed only).</p>}
-      {open && w && (
+      {open && (w || fileFindings.length > 0) && (
         <div className="file-brief-body">
-          <FileCard brief file={file} guideFile={g} wt={wt} onOpen={flow.onOpen} onOpenUrl={flow.onOpenUrl} />
+          <FileCard brief file={file} guideFile={g} wt={wt} findings={fileFindings} onOpen={flow.onOpen} onOpenUrl={flow.onOpenUrl} />
           <AutoExplain wt={wt} />
         </div>
       )}

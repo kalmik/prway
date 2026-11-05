@@ -230,8 +230,8 @@ export interface Briefing {
 
 /** Why PRway pre-approved a hunk without asking you. */
 export interface HunkAuto {
-  /** 'background': low risk and outside the core change the Background tab traced. */
-  kind: 'imports' | 'comments' | 'blank' | 'formatting' | 'moved' | 'ai' | 'background'
+  /** 'background': low risk and outside the core change the Background tab traced. 'review': the AI review passed it. */
+  kind: 'imports' | 'comments' | 'blank' | 'formatting' | 'moved' | 'ai' | 'background' | 'review'
   reason: string
 }
 
@@ -275,6 +275,53 @@ export interface FileWalkthrough {
   createdAt: string
 }
 
+// ---- AI review (findings) ----
+
+export interface ReviewFinding {
+  /** Stable within a review: `<path>:<line>:<n>`. */
+  id: string
+  /** A file the PR changes, and the line in its new version the problem is at. */
+  path: string
+  line: number
+  severity: Risk
+  /** One short line, e.g. "Retries can charge the late fee twice". */
+  title: string
+  /** What goes wrong and when, in markdown, citing path:line. */
+  detail: string
+  /** Code the reviewer read to confirm it (anywhere in the repository). */
+  evidence: { path: string; line: number | null }[]
+  /** The chunk it falls in (its hash), when the line is inside one. */
+  hunkHash?: string
+}
+
+/** The AI review's call on one chunk. */
+export interface ChunkCall {
+  path: string
+  hash: string
+  /** False: reading it adds nothing once the rest is reviewed, so it is pre-approved. */
+  needsYou: boolean
+  /** Why, in a few words; for a chunk that needs you, what to look at. */
+  reason: string
+}
+
+/** The AI review of a PR at one head commit: a few confirmed findings, or why it was skipped. */
+export interface PrReview {
+  headSha: string
+  createdAt: string
+  findings: ReviewFinding[]
+  /** One line about the PR overall. */
+  verdict: string
+  /** Set when no AI review was made, with why (nothing left to decide, e.g. every file is noise). */
+  skipped?: string
+  /** The review's call on every chunk: whether you need to read it. It decides pre-approval when present. */
+  chunks?: ChunkCall[]
+  /** Format version: older reviews (no chunk calls) are made again. */
+  version?: number
+  model?: string
+  account?: string
+  seconds?: number
+}
+
 // ---- Your feedback on AI hints (per repository) ----
 
 /** Only 'noise' is given now (👎); 'useful' is what older versions also stored, and it's ignored. */
@@ -284,7 +331,7 @@ export type HintVerdict = 'useful' | 'noise'
 export interface HintFeedback {
   /** `<kind>|<path>|<text>`: rating the same hint again replaces the old rating. */
   id: string
-  kind: 'check' | 'note' | 'focus'
+  kind: 'check' | 'note' | 'focus' | 'finding'
   pr: number
   path: string
   text: string
@@ -759,6 +806,12 @@ export interface PrwayApi {
   onOpenPr(cb: (req: OpenPrRequest) => void): () => void
   /** Steps of a background build in progress ("repo#number" and the step). */
   onBriefingProgress(cb: (p: { pr: string; step: string }) => void): () => void
+  findings: {
+    /** The saved AI review for the PR's current head, or null. */
+    get(repo: string, number: number): Promise<PrReview | null>
+    /** Reviews the PR (reading the code to confirm each finding); small low-risk PRs are skipped unless `force`. */
+    generate(repo: string, number: number, force?: boolean): Promise<PrReview>
+  }
   setup: {
     /** Checks git and Claude Code (and the sign-in of the default account, or of `accountId`). */
     check(accountId?: string): Promise<SetupCheck>
