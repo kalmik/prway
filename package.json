@@ -1,7 +1,7 @@
 {
   "name": "prway",
   "productName": "PRway",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "description": "Desktop app focused on human code review of GitHub pull requests",
   "license": "MIT",
