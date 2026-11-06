@@ -51,7 +51,8 @@ const api: PrwayApi = {
     references: call('code:references'),
     readFile: call('code:readFile'),
     listFiles: call('code:listFiles'),
-    changedLines: call('code:changedLines')
+    changedLines: call('code:changedLines'),
+    commentableLines: call('code:commentableLines')
   },
   context: {
     changedFunctions: call('context:changedFunctions'),

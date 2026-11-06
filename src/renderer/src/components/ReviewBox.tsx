@@ -15,22 +15,29 @@ export function ReviewBox({
   number: number
   drafts: DraftComment[]
   headSha: string
-  onSubmitted: () => void
+  /** `notSent`: drafts that couldn't be sent (kept). */
+  onSubmitted: (notSent: string[]) => void
 }) {
   const [body, setBody] = useState('')
   const [event, setEvent] = useState<ReviewEvent>('COMMENT')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
   const stale = drafts.filter((d) => d.headSha !== headSha).length
+  const outside = drafts.filter((d) => d.outside).length
 
   async function submit() {
     setBusy(true)
     setMessage(null)
     try {
-      await api.pulls.submitReview(repo, number, event, body, drafts)
+      const r = await api.pulls.submitReview(repo, number, event, body, drafts)
+      const sent = drafts.length - r.notSent.length
       setBody('')
-      setMessage({ ok: true, text: `Review submitted to GitHub${drafts.length ? ` with ${drafts.length} inline comment${drafts.length > 1 ? 's' : ''}` : ''}.` })
-      onSubmitted()
+      setMessage(
+        r.error
+          ? { ok: false, text: r.error }
+          : { ok: true, text: `Review submitted to GitHub${sent ? ` with ${sent} comment${sent > 1 ? 's' : ''}` : ''}.` }
+      )
+      onSubmitted(r.notSent)
       // The PR list shows your review state: let it reload.
       window.dispatchEvent(new CustomEvent('prway-reviewed', { detail: { repo, number } }))
     } catch (err) {
@@ -47,6 +54,13 @@ export function ReviewBox({
         <p className="small">
           <span className="tag pending">{drafts.length} pending</span> inline comment{drafts.length > 1 ? 's' : ''} will be sent with
           this review.
+          {outside > 0 && (
+            <span className="muted">
+              {' '}
+              {outside === drafts.length ? (outside > 1 ? 'They are' : 'It is') : `${outside} of them ${outside > 1 ? 'are' : 'is'}`} outside the diff and
+              {outside > 1 ? ' go as file comments linking to their lines.' : ' goes as a file comment linking to its line.'}
+            </span>
+          )}
           {stale > 0 && <span className="warn-text"> {stale} written on an older commit.</span>}
         </p>
       )}

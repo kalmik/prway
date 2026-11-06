@@ -1078,8 +1078,8 @@ export function PrView({
                 number={number}
                 drafts={drafts}
                 headSha={tree.headSha}
-                onSubmitted={() => {
-                  setDrafts([])
+                onSubmitted={(notSent) => {
+                  setDrafts(drafts.filter((d) => notSent.includes(d.id)))
                   loadThreads()
                 }}
               />
@@ -1099,6 +1099,7 @@ export function PrView({
                 nav={navHandlers}
                 request={codeOpen}
                 onViewDiff={(p, l) => openAt(p, l, 'RIGHT', true, true)}
+                comments={{ drafts, actions: commentActions, onCreateDraft: commentActions.onCreateDraft }}
                 onBack={
                   codeReturn
                     ? () => {
@@ -1165,8 +1166,8 @@ export function PrView({
                         number={number}
                         drafts={drafts}
                         headSha={tree.headSha}
-                        onSubmitted={() => {
-                          setDrafts([])
+                        onSubmitted={(notSent) => {
+                          setDrafts(drafts.filter((d) => notSent.includes(d.id)))
                           loadThreads()
                         }}
                       />

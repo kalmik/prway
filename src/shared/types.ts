@@ -544,6 +544,18 @@ export interface DraftComment {
   body: string
   /** PR head commit the line numbers refer to. */
   headSha: string
+  /**
+   * The line isn't in the diff (GitHub takes line comments only there): sent as a comment on the file, starting with a
+   * link to the lines at the head commit, which GitHub shows as a code snippet. New side only.
+   */
+  outside?: boolean
+}
+
+/** What a review submit couldn't send: file comments go one by one after the review, so some can fail on their own. */
+export interface SubmitResult {
+  /** Draft ids not sent (kept as drafts). */
+  notSent: string[]
+  error: string | null
 }
 
 // ---- Code navigation and context ----
@@ -689,7 +701,7 @@ export interface PrwayApi {
     list(repo: string): Promise<PullSummary[]>
     get(repo: string, number: number): Promise<PullDetail>
     /** Submits a review with the given drafts as inline comments, on the head commit PRway shows. */
-    submitReview(repo: string, number: number, event: ReviewEvent, body: string, comments: DraftComment[]): Promise<void>
+    submitReview(repo: string, number: number, event: ReviewEvent, body: string, comments: DraftComment[]): Promise<SubmitResult>
     threads(repo: string, number: number): Promise<ReviewThread[]>
     reply(repo: string, number: number, commentId: number, body: string): Promise<ReviewComment>
     setResolved(threadId: string, resolved: boolean): Promise<void>
@@ -719,6 +731,8 @@ export interface PrwayApi {
     listFiles(repo: string, number: number): Promise<string[]>
     /** Lines of `path` at the PR head that the PR added or changed. */
     changedLines(repo: string, number: number, path: string): Promise<number[]>
+    /** Lines of the PR head version GitHub takes line comments on (in the diff, with 3 lines of context). */
+    commentableLines(repo: string, number: number, path: string): Promise<number[]>
   }
   context: {
     changedFunctions(repo: string, number: number, path: string): Promise<ChangedFunction[]>

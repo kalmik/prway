@@ -258,6 +258,11 @@ function Draft({ draft, stale, actions }: { draft: DraftComment; stale: boolean;
     <div className="thread draft">
       <div className="thread-head small">
         <span className="tag pending">pending</span>
+        {draft.outside && (
+          <span className="tag" title="This line isn't in the diff, so GitHub gets it as a comment on the file, starting with a link to the line (shown as a code snippet)">
+            file comment
+          </span>
+        )}
         {draft.startLine && <span className="muted">lines {draft.startLine}–{draft.line}</span>}
         {stale && <span className="warn-chip">written on an older commit: check the line</span>}
         <span className="spacer" />
@@ -297,7 +302,7 @@ export function LineComments({
 }: {
   threads: ReviewThread[]
   drafts: DraftComment[]
-  composing: { startLine?: number; line: number } | null
+  composing: { startLine?: number; line: number; outside?: boolean } | null
   headSha: string
   actions: CommentActions
 }) {
@@ -311,9 +316,16 @@ export function LineComments({
       ))}
       {composing && (
         <div className="thread composing">
-          {composing.startLine && (
+          {composing.startLine && !composing.outside && (
             <div className="small muted">
               Lines {composing.startLine}–{composing.line}
+            </div>
+          )}
+          {composing.outside && (
+            <div className="small muted">
+              {composing.startLine ? `Lines ${composing.startLine}–${composing.line} aren’t` : `Line ${composing.line} isn’t`} in the diff, and GitHub
+              only takes line comments there: this goes as a comment on the file, starting with a link to{' '}
+              {composing.startLine ? 'them' : 'it'} (GitHub shows it as a code snippet).
             </div>
           )}
           <Box

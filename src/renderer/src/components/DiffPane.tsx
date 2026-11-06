@@ -27,6 +27,8 @@ interface Composing {
   side: DiffSide
   line: number
   startLine?: number
+  /** Not in the diff: sent as a file comment linking to the lines. */
+  outside?: boolean
 }
 
 export interface HunkMark {
@@ -276,7 +278,7 @@ export function DiffPane(props: Props) {
         }),
         ed.onMouseMove((e) => {
           const line = e.target.position?.lineNumber
-          if (GUTTER.has(e.target.type) && line && commentable[side].has(line)) {
+          if (GUTTER.has(e.target.type) && line && (commentable[side].has(line) || side === 'RIGHT')) {
             hover.set([{ range: new monaco.Range(line, 1, line, 1), options: { glyphMarginClassName: 'comment-add-glyph' } }])
           } else hover.clear()
         }),
@@ -311,13 +313,19 @@ export function DiffPane(props: Props) {
   function lineMenuItems(m: LineMenuAt & { side: DiffSide }) {
     const ed = m.side === 'LEFT' ? original : modified
     const path = m.side === 'LEFT' ? (file.oldPath ?? file.path) : file.path
-    const canComment = commentable[m.side].has(m.end)
+    const inDiff = commentable[m.side].has(m.end)
+    // Outside the diff GitHub takes no line comment: it goes as a file comment, on the new side's line numbers.
+    const canComment = inDiff || (m.side === 'RIGHT' && file.status !== 'D')
     return [
       {
         label: m.start === m.end ? 'Comment on this line' : 'Comment on these lines',
-        disabledReason: canComment ? undefined : 'GitHub only takes comments on lines in the diff (changed lines and the few around them)',
+        disabledReason: canComment ? undefined : 'Lines outside the diff take comments on the new side: click the line on the right',
         run: () =>
-          setComposing({ side: m.side, line: m.end, startLine: m.start < m.end && commentable[m.side].has(m.start) ? m.start : undefined })
+          setComposing(
+            inDiff
+              ? { side: m.side, line: m.end, startLine: m.start < m.end && commentable[m.side].has(m.start) ? m.start : undefined }
+              : { side: 'RIGHT', line: m.end, startLine: m.start < m.end ? m.start : undefined, outside: true }
+          )
       },
       {
         label: 'Ask in Chat',
@@ -580,7 +588,14 @@ export function DiffPane(props: Props) {
             actions={{
               ...actions,
               onAddDraft: (body) => {
-                latest.current.actions.onCreateDraft({ path: file.path, side, line, startLine: compose?.startLine, body })
+                latest.current.actions.onCreateDraft({
+                  path: file.path,
+                  side,
+                  line,
+                  startLine: compose?.startLine,
+                  body,
+                  ...(compose?.outside ? { outside: true } : {})
+                })
                 setComposing(null)
               }
             }}

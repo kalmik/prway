@@ -3,12 +3,13 @@
 
 import { Editor } from '@monaco-editor/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangedFile } from '../../../shared/types'
+import type { ChangedFile, DraftComment } from '../../../shared/types'
 import { languageFor, monaco, MONO_FONT } from '../monaco'
 import { errorText, useStored } from '../util'
 import { buildTree, compact, type Dir } from '../fileTree'
 import { attachCodeNav, linesRef, type NavHandlers } from './codeNav'
 import { attachLineMenu, copyReference, LineMenu, type LineMenuAt } from './LineMenu'
+import { LineComments, useViewZones, type CommentActions, type ZoneSpec } from './Comments'
 import { Loading } from './Loading'
 
 const api = window.prway
@@ -35,6 +36,14 @@ interface Props {
   onViewDiff: (path: string, line: number | null) => void
   /** Set when a link from the review opened the code view: returns to where you were. */
   onBack?: () => void
+  comments?: CodeComments
+}
+
+/** Your pending comments, to write and show them on changed files. */
+export interface CodeComments {
+  drafts: DraftComment[]
+  actions: Omit<CommentActions, 'onAddDraft' | 'onCancelCompose'>
+  onCreateDraft: (d: Omit<DraftComment, 'id' | 'headSha'>) => void
 }
 
 /** Greedy subsequence match of `q` in `text`: a score (consecutive characters count more), or null. */
@@ -70,7 +79,7 @@ const handledRequests = new Map<string, number>()
 
 const STATUS_LABEL: Record<string, string> = { A: 'added', M: 'modified', R: 'renamed', C: 'copied', T: 'type changed', D: 'deleted' }
 
-export function CodeBrowser({ repo, number, headSha, changed, dark, nav, request, onViewDiff, onBack }: Props) {
+export function CodeBrowser({ repo, number, headSha, changed, dark, nav, request, onViewDiff, onBack, comments }: Props) {
   const prKey = `${repo}#${number}`
   const rootRef = useRef<HTMLDivElement>(null)
   const filterRef = useRef<HTMLInputElement>(null)
@@ -331,6 +340,7 @@ export function CodeBrowser({ repo, number, headSha, changed, dark, nav, request
               dark={dark}
               nav={nav}
               onViewDiff={activeChange ? (l) => onViewDiff(active, l) : undefined}
+              comments={activeChange && activeChange.status !== 'D' ? comments : undefined}
             />
           </>
         ) : (
@@ -357,7 +367,8 @@ function CodeEditor({
   line,
   dark,
   nav,
-  onViewDiff
+  onViewDiff,
+  comments
 }: {
   repo: string
   number: number
@@ -369,8 +380,10 @@ function CodeEditor({
   nav: NavHandlers
   /** For files the PR changed: opens the diff at a line. */
   onViewDiff?: (line: number) => void
+  /** For files the PR changed: comment on any line (outside the diff it goes as a file comment). */
+  comments?: CodeComments
 }) {
-  const texts = useRef(new Map<string, { text: string; changedLines: number[] } | { note: string }>())
+  const texts = useRef(new Map<string, { text: string; changedLines: number[]; commentable: Set<number> } | { note: string }>())
   const [, setLoaded] = useState(0)
   const [editor, setEditor] = useState<monaco.editor.IStandaloneCodeEditor | null>(null)
   const navRef = useRef(nav)
@@ -385,12 +398,19 @@ function CodeEditor({
   useEffect(() => {
     if (texts.current.has(key)) return
     let current = true
-    Promise.all([api.code.readFile(repo, number, path), changed ? api.code.changedLines(repo, number, path) : Promise.resolve([])]).then(
-      ([f, lines]) => {
+    const none = Promise.resolve([] as number[])
+    Promise.all([
+      api.code.readFile(repo, number, path),
+      changed ? api.code.changedLines(repo, number, path) : none,
+      changed ? api.code.commentableLines(repo, number, path).catch(() => [] as number[]) : none
+    ]).then(
+      ([f, lines, commentable]) => {
         if (!current) return
         texts.current.set(
           key,
-          f.skipped ? { note: f.skipped === 'binary' ? 'Binary file, not shown.' : 'File is too large to show.' } : { text: f.text, changedLines: lines }
+          f.skipped
+            ? { note: f.skipped === 'binary' ? 'Binary file, not shown.' : 'File is too large to show.' }
+            : { text: f.text, changedLines: lines, commentable: new Set(commentable) }
         )
         setLoaded((n) => n + 1)
       },
@@ -417,6 +437,54 @@ function CodeEditor({
 
   const entry = texts.current.get(key)
   const ready = entry && 'text' in entry ? entry : null
+
+  // ---- Comments: your drafts on this file (new side) and the box to write one ----
+  const [composing, setComposing] = useState<{ line: number; startLine?: number; outside: boolean } | null>(null)
+  useEffect(() => setComposing(null), [key])
+  const commentsRef = useRef(comments)
+  commentsRef.current = comments
+  const drafts = useMemo(() => (comments?.drafts ?? []).filter((d) => d.path === path && d.side === 'RIGHT'), [comments?.drafts, path])
+  const zones: ZoneSpec[] = useMemo(() => {
+    if (!comments || !ready) return []
+    const lines = new Set([...drafts.map((d) => d.line), ...(composing ? [composing.line] : [])])
+    return [...lines].map((l) => {
+      const compose = composing?.line === l ? composing : null
+      return {
+        key: `draft:${l}`,
+        line: l,
+        node: (
+          <LineComments
+            threads={[]}
+            drafts={drafts.filter((d) => d.line === l)}
+            composing={compose}
+            headSha={headSha}
+            actions={{
+              onReply: (t, b) => commentsRef.current!.actions.onReply(t, b),
+              onResolve: (t, r) => commentsRef.current!.actions.onResolve(t, r),
+              onSaveDraft: (d) => commentsRef.current?.actions.onSaveDraft(d),
+              onDeleteDraft: (id) => commentsRef.current?.actions.onDeleteDraft(id),
+              onOpenUrl: (u) => commentsRef.current?.actions.onOpenUrl(u),
+              onCodeRef: (p, ln) => commentsRef.current?.actions.onCodeRef(p, ln),
+              onCancelCompose: () => setComposing(null),
+              onAddDraft: (body) => {
+                commentsRef.current?.onCreateDraft({
+                  path,
+                  side: 'RIGHT',
+                  line: l,
+                  startLine: compose?.startLine,
+                  body,
+                  ...(compose?.outside ? { outside: true } : {})
+                })
+                setComposing(null)
+              }
+            }}
+          />
+        )
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drafts, composing, ready, headSha, path, !!comments, dark])
+  useViewZones(editor, zones)
   // The editor keeps the last loaded file until the next one is ready (never an empty model for a path).
   const shown = useRef<{ path: string; text: string } | null>(null)
   if (ready) shown.current = { path, text: ready.text }
@@ -481,6 +549,17 @@ function CodeEditor({
   function lineMenuItems(m: LineMenuAt) {
     const changedHere = ready?.changedLines.find((l) => l >= m.start && l <= m.end)
     return [
+      ...(comments && ready
+        ? [
+            {
+              label: m.start === m.end ? 'Comment on this line' : 'Comment on these lines',
+              run: () => {
+                const inDiff = ready.commentable.has(m.end) && (m.start === m.end || ready.commentable.has(m.start))
+                setComposing({ line: m.end, startLine: m.start < m.end ? m.start : undefined, outside: !inDiff })
+              }
+            }
+          ]
+        : []),
       {
         label: 'Ask in Chat',
         hint: '⌘L',

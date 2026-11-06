@@ -8,7 +8,8 @@ import type {
   RepoListing,
   ReviewComment,
   ReviewEvent,
-  ReviewThread
+  ReviewThread,
+  SubmitResult
 } from '../../shared/types'
 import { diagnoseAccess } from './access'
 import { GitHubError, type GitHub } from './api'
@@ -142,7 +143,16 @@ export async function getPull(gh: GitHub, repo: string, number: number, me: stri
   }
 }
 
-/** Sends a review. Drafts become inline comments, anchored to `commitId` (the head PRway showed). */
+/** A link to lines at a commit; GitHub shows it as a code snippet when it sits on its own line. */
+export function codeLink(repo: string, sha: string, path: string, line: number, startLine?: number): string {
+  const lines = startLine && startLine < line ? `L${startLine}-L${line}` : `L${line}`
+  return `https://github.com/${repo}/blob/${sha}/${path.split('/').map(encodeURIComponent).join('/')}#${lines}`
+}
+
+/**
+ * Sends the review: drafts on diff lines go in it as inline comments; drafts outside the diff (GitHub takes line
+ * comments only there) follow it one by one as file comments that start with a link to their lines.
+ */
 export async function submitReview(
   gh: GitHub,
   repo: string,
@@ -151,31 +161,61 @@ export async function submitReview(
   body: string,
   comments: DraftComment[],
   commitId: string | null
-): Promise<void> {
+): Promise<SubmitResult> {
   if (event !== 'APPROVE' && !body.trim() && !comments.length) {
     throw new Error('Write a comment, or add inline comments, for this review type')
   }
-  const payload: Record<string, unknown> = { event, body }
-  if (comments.length) {
-    if (!commitId) throw new Error('Open the PR files first so PRway knows which commit the comments refer to')
-    payload.commit_id = commitId
-    payload.comments = comments.map((c) => ({
-      path: c.path,
-      line: c.line,
-      side: c.side,
-      ...(c.startLine && c.startLine < c.line ? { start_line: c.startLine, start_side: c.side } : {}),
-      body: c.body
-    }))
-  }
-  try {
-    await gh.request(`/repos/${repo}/pulls/${number}/reviews`, { method: 'POST', body: payload })
-  } catch (err) {
-    if (err instanceof GitHubError && err.status === 422 && comments.length) {
-      throw new Error(
-        `GitHub rejected the review: ${err.apiMessage}. An inline comment may point at a line outside the diff, or the PR got new commits: reload the PR and check your drafts.`
-      )
+  if (comments.length && !commitId) throw new Error('Open the PR files first so PRway knows which commit the comments refer to')
+  const inline = comments.filter((c) => !c.outside)
+  const outside = comments.filter((c) => c.outside)
+  // A plain comment review with nothing in it but file comments: those are enough on their own.
+  if (inline.length || body.trim() || event !== 'COMMENT') {
+    const payload: Record<string, unknown> = { event, body }
+    if (inline.length) {
+      payload.commit_id = commitId
+      payload.comments = inline.map((c) => ({
+        path: c.path,
+        line: c.line,
+        side: c.side,
+        ...(c.startLine && c.startLine < c.line ? { start_line: c.startLine, start_side: c.side } : {}),
+        body: c.body
+      }))
     }
-    throw err
+    try {
+      await gh.request(`/repos/${repo}/pulls/${number}/reviews`, { method: 'POST', body: payload })
+    } catch (err) {
+      if (err instanceof GitHubError && err.status === 422 && inline.length) {
+        throw new Error(
+          `GitHub rejected the review: ${err.apiMessage}. An inline comment may point at a line outside the diff, or the PR got new commits: reload the PR and check your drafts.`
+        )
+      }
+      throw err
+    }
+  }
+  const notSent: string[] = []
+  let error: string | null = null
+  for (const c of outside) {
+    try {
+      await gh.request(`/repos/${repo}/pulls/${number}/comments`, {
+        method: 'POST',
+        body: {
+          commit_id: commitId,
+          path: c.path,
+          subject_type: 'file',
+          // The link points at the commit the line numbers were written on.
+          body: `${codeLink(repo, c.headSha || commitId!, c.path, c.line, c.startLine)}\n\n${c.body}`
+        }
+      })
+    } catch (err) {
+      notSent.push(c.id)
+      error ??= err instanceof GitHubError ? err.apiMessage : (err as Error).message
+    }
+  }
+  return {
+    notSent,
+    error: notSent.length
+      ? `${notSent.length} comment${notSent.length > 1 ? 's' : ''} outside the diff could not be sent (kept as draft${notSent.length > 1 ? 's' : ''}): ${error}`
+      : null
   }
 }
 

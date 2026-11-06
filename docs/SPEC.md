@@ -97,7 +97,10 @@ mechanical edits, checking the change against the stated intent, and a knowledge
   - GitHub threads show under their lines (GraphQL, with resolved/outdated state); reply, resolve, unresolve.
   - Click a line number to write a comment (select lines first for a range). Comments stay as pending drafts
     (saved locally per PR) and go out together with the review, anchored to the head commit PRway shows.
-  - Only lines inside diff hunks take comments, as on GitHub. Outdated threads are listed above the diff.
+  - GitHub takes line comments only inside diff hunks. A comment on any other line of a changed file (an unchanged
+    line in the diff, or any line in the Code view) goes as a file comment that starts with a link to the lines at the
+    head commit, which GitHub shows as a code snippet. These are sent one by one after the review; any that fail stay
+    as drafts. Outdated threads are listed above the diff.
   - Conversation tab: the description, general PR comments and review summaries (with their state) in date order;
     post a general comment; Refresh reloads it and the inline threads.
 - Code navigation at the PR head: ⌘/Ctrl+click or F12 for definitions, Shift+F12 for references, also in files the
@@ -159,7 +162,7 @@ mechanical edits, checking the change against the stated intent, and a knowledge
     - Anthropic API: PRway's `read_file`/`grep`/`list_files` tools (`src/main/ai/codeTools.ts`, paths kept inside
       the checkout, no `.git`), at most 12 tool rounds per answer
     - the base version is not readable; the diffs and the Background cover it
-- Line menu: clicking a line number opens a small menu: Comment (diff, on lines GitHub accepts), Ask in Chat, View
+- Line menu: clicking a line number opens a small menu: Comment (diff and Code view, on changed files; outside the diff it becomes a file comment), Ask in Chat, View
   diff (Code view, changed lines) and Copy reference (`path:12-15`)
 
 **Milestone 4 — guided review (the main view)**

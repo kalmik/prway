@@ -9,7 +9,7 @@ import type { GitHub } from '../github/api'
 import { listReviewComments, pullsForCommit } from '../github/pulls'
 import { catFiles, git, type WorktreeManager } from '../git/worktrees'
 import { generatedReason } from '../review/noise'
-import { changedNewLines, definitionKind, isTestPath, langOf, outline, qualifierMatchesPath, symbolAt } from './symbols'
+import { changedNewLines, hunkLines, definitionKind, isTestPath, langOf, outline, qualifierMatchesPath, symbolAt } from './symbols'
 
 const MAX_GREP_HITS = 3000
 const MAX_REFERENCES = 300
@@ -97,6 +97,12 @@ export class CodeNavigator {
     const { headSha, mergeBase } = this.worktrees.prRefs(repo, number)
     const diff = await git(['diff', '-U0', '-M', mergeBase, headSha, '--', path], this.worktrees.repoDir(repo), this.worktrees.tokenOrNull())
     return [...changedNewLines(diff)]
+  }
+
+  async commentableLines(repo: string, number: number, path: string): Promise<number[]> {
+    const { headSha, mergeBase } = this.worktrees.prRefs(repo, number)
+    const diff = await git(['diff', '-U3', '-M', mergeBase, headSha, '--', path], this.worktrees.repoDir(repo), this.worktrees.tokenOrNull())
+    return hunkLines(diff).right
   }
 
   /** Functions (or modules, for top-level changes) that contain changed lines of `path`. */

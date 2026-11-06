@@ -241,6 +241,10 @@ function registerIpc(): void {
     await prepared(repo, number)
     return navigator.listFiles(repo, number)
   })
+  handle('code:commentableLines', async (repo: string, number: number, path: string) => {
+    await prepared(repo, number)
+    return navigator.commentableLines(repo, number, path)
+  })
   handle('code:changedLines', async (repo: string, number: number, path: string) => {
     await prepared(repo, number)
     return navigator.changedLines(repo, number, path)
