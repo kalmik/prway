@@ -131,7 +131,7 @@ async function myReviews(gh: GitHub, repo: string, me: string): Promise<Map<numb
   return out
 }
 
-export async function getPull(gh: GitHub, repo: string, number: number, me: string): Promise<PullDetail & { baseSha: string }> {
+export async function getPull(gh: GitHub, repo: string, number: number, me: string): Promise<PullDetail & { baseSha: string; headSha: string }> {
   const p = await gh.get<RawPull>(`/repos/${repo}/pulls/${number}`)
   return {
     ...toSummary(repo, p, me),
@@ -139,7 +139,8 @@ export async function getPull(gh: GitHub, repo: string, number: number, me: stri
     additions: p.additions ?? 0,
     deletions: p.deletions ?? 0,
     changedFiles: p.changed_files ?? 0,
-    baseSha: p.base.sha
+    baseSha: p.base.sha,
+    headSha: p.head.sha
   }
 }
 

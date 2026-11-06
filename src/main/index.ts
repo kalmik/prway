@@ -80,8 +80,12 @@ const trees = new Map<string, WorktreeInfo>()
 async function prepare(repo: string, number: number): Promise<WorktreeInfo> {
   const { gh, me } = requireGh()
   const pull = await getPull(gh, repo, number, me)
-  const tree = await worktrees.prepare(repo, number, pull.baseRef, (step) =>
-    win?.webContents.send('worktree:progress', { pr: `${repo}#${number}`, step })
+  const tree = await worktrees.prepare(
+    repo,
+    number,
+    pull.baseRef,
+    (step) => win?.webContents.send('worktree:progress', { pr: `${repo}#${number}`, step }),
+    pull.headSha
   )
   trees.set(`${repo}#${number}`, tree)
   return tree

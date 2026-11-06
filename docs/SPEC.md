@@ -283,7 +283,8 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 
 - Loading feedback (`components/Loading.tsx`): every wait shows a spinner with what it is waiting for; slow AI work
   counts seconds. Opening a PR reports its steps (waiting for other git work, cloning, fetching, checking out,
-  comparing). Under the PR title, an activity strip lists the work running for the PR wherever you are (refresh, guide,
+  comparing). Reopening a PR whose head GitHub reports as the commit already fetched (same base branch) skips the
+  fetch and the checkout, so it is local work only. Under the PR title, an activity strip lists the work running for the PR wherever you are (refresh, guide,
   AI review, explaining files, Background, chat), each with its seconds and a click to where it shows. Resolve and
   Unresolve show a spinner until GitHub answers.
 

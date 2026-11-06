@@ -141,30 +141,50 @@ export class WorktreeManager {
     return t
   }
 
-  /** Fetches the PR, creates or updates its worktree and lists the changed files. */
-  prepare(repo: string, number: number, baseRef: string, step: (s: string) => void = () => undefined): Promise<WorktreeInfo> {
+  /**
+   * Fetches the PR, creates or updates its worktree and lists the changed files. `expectedHead` (the PR head GitHub
+   * reports): when it is the commit already fetched for this PR, against the same base branch, the fetch is skipped.
+   */
+  prepare(
+    repo: string,
+    number: number,
+    baseRef: string,
+    step: (s: string) => void = () => undefined,
+    expectedHead?: string
+  ): Promise<WorktreeInfo> {
     if (this.locks.has(repo)) step('Waiting for other git work on this repository…')
     return this.withLock(repo, async () => {
       const dir = await this.ensureClone(repo, step)
-      step('Fetching the PR and its base branch…')
       const prRef = `refs/prway/pr/${number}`
       const baseLocal = `refs/prway/base/${baseRef}`
+      // Which base branch the PR was last fetched with (it can be retargeted).
+      const baseKey = `prway.pr${number}.base`
 
-      await git(
-        ['fetch', '--force', '--no-tags', 'origin', `+refs/pull/${number}/head:${prRef}`, `+refs/heads/${baseRef}:${baseLocal}`],
-        dir,
-        this.token()
-      )
+      // Nothing new: the base branch fetched along with this head already holds every base commit the head contains
+      // (base branches only move forward), so the merge base can't change.
+      const have = await git(['rev-parse', '--verify', '-q', prRef], dir).then((o) => o.trim(), () => '')
+      const sameBase = await git(['config', '--get', baseKey], dir).then((o) => o.trim() === baseRef, () => false)
+      const fresh = !!expectedHead && have === expectedHead && sameBase && (await git(['rev-parse', '--verify', '-q', baseLocal], dir).then(() => true, () => false))
+      if (!fresh) {
+        step('Fetching the PR and its base branch…')
+        await git(
+          ['fetch', '--force', '--no-tags', 'origin', `+refs/pull/${number}/head:${prRef}`, `+refs/heads/${baseRef}:${baseLocal}`],
+          dir,
+          this.token()
+        )
+        await git(['config', baseKey, baseRef], dir)
+      }
       const headSha = (await git(['rev-parse', prRef], dir)).trim()
       // Same comparison GitHub shows: from where the PR branched off, to the PR head.
       const mergeBase = (await git(['merge-base', baseLocal, headSha], dir)).trim()
 
       const wt = this.worktreeDir(repo, number)
-      step('Checking out the PR…')
       if (!existsSync(wt)) {
+        step('Checking out the PR…')
         mkdirSync(join(wt, '..'), { recursive: true })
         await git(['worktree', 'add', '--detach', wt, headSha], dir, this.token())
-      } else {
+      } else if ((await git(['rev-parse', 'HEAD'], wt).then((o) => o.trim(), () => '')) !== headSha) {
+        step('Checking out the PR…')
         // Fails on purpose if you edited files in the worktree that clash with new PR commits.
         await git(['checkout', '--detach', headSha], wt, this.token())
       }
