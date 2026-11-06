@@ -274,6 +274,8 @@ export interface FileWalkthrough {
   /** The AI account that made it (its name). */
   account?: string
   createdAt: string
+  /** Made for an earlier head commit whose changes to this file were the same: reused, not asked again. */
+  reusedFrom?: string
 }
 
 // ---- AI review (findings) ----
@@ -496,6 +498,8 @@ export interface ReviewComment {
   /** REST id, used to reply. */
   id: number
   author: string
+  /** Written by a bot account (CodeRabbit, Copilot, Dependabot…). */
+  bot?: boolean
   authorAvatar: string
   body: string
   createdAt: string
@@ -524,6 +528,8 @@ export interface ConversationItem {
   kind: 'description' | 'comment' | 'review'
   id: string
   author: string
+  /** Written by a bot account. */
+  bot?: boolean
   authorAvatar: string
   body: string
   createdAt: string

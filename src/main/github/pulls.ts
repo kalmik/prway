@@ -18,7 +18,10 @@ import { GitHubError, type GitHub } from './api'
 interface RawUser {
   login: string
   avatar_url: string
+  type?: string
 }
+
+const isBot = (u: RawUser | null) => !!u && (u.type === 'Bot' || u.login.endsWith('[bot]'))
 interface RawPull {
   number: number
   title: string
@@ -238,7 +241,7 @@ interface RawThread {
       createdAt: string
       url: string
       diffHunk: string
-      author: { login: string; avatarUrl: string } | null
+      author: { __typename: string; login: string; avatarUrl: string } | null
     }[]
   }
 }
@@ -250,7 +253,7 @@ const THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!, $cu
         pageInfo { hasNextPage endCursor }
         nodes {
           id isResolved isOutdated path line startLine originalLine diffSide
-          comments(first: 100) { nodes { databaseId body createdAt url diffHunk author { login avatarUrl } } }
+          comments(first: 100) { nodes { databaseId body createdAt url diffHunk author { __typename login avatarUrl } } }
         }
       }
     }
@@ -282,6 +285,7 @@ export async function listThreads(gh: GitHub, repo: string, number: number): Pro
         comments: t.comments.nodes.map((c) => ({
           id: c.databaseId,
           author: c.author?.login ?? 'ghost',
+          ...(c.author?.__typename === 'Bot' ? { bot: true } : {}),
           authorAvatar: c.author?.avatarUrl ?? '',
           body: c.body,
           createdAt: c.createdAt,
@@ -302,7 +306,7 @@ export async function replyToComment(gh: GitHub, repo: string, number: number, c
     { method: 'POST', body: { body } }
   )
   const c = res.data
-  return { id: c.id, author: c.user?.login ?? 'ghost', authorAvatar: c.user?.avatar_url ?? '', body: c.body, createdAt: c.created_at, url: c.html_url }
+  return { id: c.id, author: c.user?.login ?? 'ghost', ...(isBot(c.user) ? { bot: true } : {}), authorAvatar: c.user?.avatar_url ?? '', body: c.body, createdAt: c.created_at, url: c.html_url }
 }
 
 export async function setThreadResolved(gh: GitHub, threadId: string, resolved: boolean): Promise<void> {
@@ -326,6 +330,7 @@ const fromIssueComment = (c: RawIssueComment): ConversationItem => ({
   kind: 'comment',
   id: `c${c.id}`,
   author: c.user?.login ?? 'ghost',
+  ...(isBot(c.user) ? { bot: true } : {}),
   authorAvatar: c.user?.avatar_url ?? '',
   body: c.body ?? '',
   createdAt: c.created_at,
@@ -361,6 +366,7 @@ export async function listConversation(gh: GitHub, repo: string, number: number)
         kind: 'review' as const,
         id: `r${r.id}`,
         author: r.user?.login ?? 'ghost',
+        ...(isBot(r.user) ? { bot: true } : {}),
         authorAvatar: r.user?.avatar_url ?? '',
         body: r.body ?? '',
         createdAt: r.submitted_at ?? pull.created_at,

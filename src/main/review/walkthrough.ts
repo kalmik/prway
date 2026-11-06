@@ -1,9 +1,10 @@
 // File-by-file review walkthrough: for one file, a summary, hints, related code and a note per hunk.
 // Made on demand (the UI asks for the file you are on, and prepares the next one), saved per head commit.
+// After new commits, a file whose changes are the same as at an earlier head reuses that walkthrough.
 
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import type { ChangedFile, FileWalkthrough, Hunk, PullDetail } from '../../shared/types'
 import { getAiSettings, getProvider } from '../ai/provider'
 import type { CodeNavigator } from '../code/navigator'
@@ -42,6 +43,8 @@ function cachePath(repo: string, number: number, headSha: string, path: string, 
 export class Walkthroughs {
   /** Same file requested twice (prefetch + click): one model call. */
   private inFlight = new Map<string, Promise<FileWalkthrough>>()
+  /** Hunks per PR head ("owner/name#n@sha"): one `git diff` however many files ask. */
+  private hunkCache = new Map<string, Promise<Map<string, HunkWithText[]>>>()
 
   constructor(
     private worktrees: WorktreeManager,
@@ -49,7 +52,19 @@ export class Walkthroughs {
   ) {}
 
   /** Hunks of every file, from one `git diff` (3 lines of context, like GitHub). */
-  async allHunks(repo: string, number: number): Promise<Map<string, HunkWithText[]>> {
+  allHunks(repo: string, number: number): Promise<Map<string, HunkWithText[]>> {
+    const { mergeBase, headSha } = this.worktrees.prRefs(repo, number)
+    const key = `${repo}#${number}@${mergeBase}..${headSha}`
+    const hit = this.hunkCache.get(key)
+    if (hit) return hit
+    const value = this.readHunks(repo, number)
+    value.catch(() => this.hunkCache.delete(key))
+    this.hunkCache.set(key, value)
+    while (this.hunkCache.size > 6) this.hunkCache.delete(this.hunkCache.keys().next().value!)
+    return value
+  }
+
+  private async readHunks(repo: string, number: number): Promise<Map<string, HunkWithText[]>> {
     const { mergeBase, headSha } = this.worktrees.prRefs(repo, number)
     const dir = this.worktrees.repoDir(repo)
     const out = await git(['-c', 'core.quotePath=false', 'diff', '-U3', '-M', mergeBase, headSha], dir, this.worktrees.tokenOrNull())
@@ -87,7 +102,8 @@ export class Walkthroughs {
 
   /** Makes the missing walkthroughs, two at a time. Returns how many were made. */
   async prepareAll(pull: PullDetail, files: ChangedFile[], paths: string[]): Promise<number> {
-    const todo = paths.filter((p) => !this.cached(pull.repo, pull.number, p))
+    const todo: string[] = []
+    for (const p of paths) if (!(await this.cached(pull.repo, pull.number, p))) todo.push(p)
     let made = 0
     const worker = async () => {
       for (let p = todo.shift(); p; p = todo.shift()) {
@@ -103,26 +119,57 @@ export class Walkthroughs {
     return made
   }
 
-  cached(repo: string, number: number, path: string): FileWalkthrough | null {
+  /** The saved walkthrough for the current head, or one from an earlier head when this file's changes are the same. */
+  async cached(repo: string, number: number, path: string): Promise<FileWalkthrough | null> {
     const { headSha, rules } = this.worktrees.prRefs(repo, number)
     const p = cachePath(repo, number, headSha, path, systemPrompt('walkthrough', repo, rules))
-    if (!existsSync(p)) return null
-    try {
-      return JSON.parse(readFileSync(p, 'utf8')) as FileWalkthrough
-    } catch {
-      return null
+    const saved = readWalkthrough(p)
+    return saved ?? this.reuse(repo, number, path, p).catch(() => null)
+  }
+
+  /**
+   * After new commits: the walkthrough of the newest earlier head whose hunks of this file are the same (same changed
+   * lines, in the same order). Copied to the current head, with its chunk numbers and code links checked again.
+   */
+  private async reuse(repo: string, number: number, path: string, current: string): Promise<FileWalkthrough | null> {
+    const { headSha } = this.worktrees.prRefs(repo, number)
+    const root = dirname(dirname(current))
+    const name = basename(current)
+    if (!existsSync(root)) return null
+    const earlier = readdirSync(root)
+      .filter((d) => d !== headSha && existsSync(join(root, d, name)))
+      .map((d) => join(root, d, name))
+      .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
+    if (!earlier.length) return null
+    const hunks = (await this.allHunks(repo, number)).get(path) ?? []
+    if (!hunks.length) return null
+    const want = hunks.map((h) => h.hash).join(',')
+    for (const file of earlier) {
+      const w = readWalkthrough(file)
+      if (!w || w.hunks.map((h) => h.hash).join(',') !== want) continue
+      const copy: FileWalkthrough = {
+        ...w,
+        headSha,
+        hunks: w.hunks.map((h, i) => ({ ...h, index: hunks[i].index })),
+        refs: await this.existingRefs(repo, headSha, w.refs),
+        reusedFrom: w.reusedFrom ?? w.headSha
+      }
+      mkdirSync(dirname(current), { recursive: true })
+      writeFileSync(current, JSON.stringify(copy, null, 2))
+      return copy
     }
+    return null
   }
 
   generate(pull: PullDetail, files: ChangedFile[], path: string, regenerate = false): Promise<FileWalkthrough> {
     const key = `${pull.repo}#${pull.number}:${path}`
     if (!regenerate) {
-      const saved = this.cached(pull.repo, pull.number, path)
-      if (saved) return Promise.resolve(saved)
       const running = this.inFlight.get(key)
       if (running) return running
     }
-    const p = this.make(pull, files, path).finally(() => this.inFlight.delete(key))
+    const p = (async () => (!regenerate && (await this.cached(pull.repo, pull.number, path))) || this.make(pull, files, path))().finally(() =>
+      this.inFlight.delete(key)
+    )
     this.inFlight.set(key, p)
     return p
   }
@@ -220,5 +267,14 @@ export class Walkthroughs {
     const found = await catFiles(this.worktrees.repoDir(repo), specs, this.worktrees.tokenOrNull()).catch(() => null)
     if (!found) return refs
     return refs.filter((_r, i) => found.get(specs[i]) !== null).map((r) => ({ ...r, path: r.path.replace(/^\.?\//, '') }))
+  }
+}
+
+function readWalkthrough(file: string): FileWalkthrough | null {
+  if (!existsSync(file)) return null
+  try {
+    return JSON.parse(readFileSync(file, 'utf8')) as FileWalkthrough
+  } catch {
+    return null
   }
 }

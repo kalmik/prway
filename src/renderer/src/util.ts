@@ -71,3 +71,27 @@ export function useStored<T>(key: string, initial: T): [T, (v: T) => void] {
   )
   return [value, set]
 }
+
+/** How many open/closed choices are kept (the oldest are forgotten first). */
+const MAX_OPEN_CHOICES = 2000
+
+/**
+ * Whether a collapsible comment is open: your last choice for it (kept across tabs, views and restarts), or
+ * `byDefault` until you choose. `id` must be unique across PRs (GitHub ids are).
+ */
+export function useOpenChoice(id: string, byDefault: boolean): [boolean, (open: boolean) => void] {
+  const [choices, setChoices] = useStored<Record<string, boolean>>('ui.commentOpen', {})
+  const open = id in choices ? choices[id] : byDefault
+  const set = useCallback(
+    (v: boolean) => {
+      const next = { ...storage.get<Record<string, boolean>>('ui.commentOpen', {}) }
+      delete next[id] // re-added last: the newest choice
+      next[id] = v
+      const keys = Object.keys(next)
+      for (const k of keys.slice(0, Math.max(0, keys.length - MAX_OPEN_CHOICES))) delete next[k]
+      setChoices(next)
+    },
+    [id, setChoices]
+  )
+  return [open, set]
+}

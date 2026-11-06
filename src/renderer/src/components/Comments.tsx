@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { DraftComment, ReviewThread } from '../../../shared/types'
 import type { monaco } from '../monaco'
-import { errorText, timeAgo } from '../util'
+import { errorText, timeAgo, useOpenChoice } from '../util'
 import { Markdown, plainPreview } from './Markdown'
 import { BusyButton } from './Loading'
 
@@ -199,9 +199,10 @@ function Box({
 }
 
 function Thread({ thread, actions }: { thread: ReviewThread; actions: CommentActions }) {
-  const [open, setOpen] = useState(!thread.resolved)
-  const [replying, setReplying] = useState(false)
   const first = thread.comments[0]
+  // Bot threads (CodeRabbit…) and resolved ones start collapsed.
+  const [open, setOpen] = useOpenChoice(`thread:${thread.id}`, !thread.resolved && !first?.bot)
+  const [replying, setReplying] = useState(false)
   return (
     <div className={`thread ${thread.resolved ? 'resolved' : ''}`}>
       <div className="thread-head small">
@@ -209,6 +210,7 @@ function Thread({ thread, actions }: { thread: ReviewThread; actions: CommentAct
           {open ? '▾' : '▸'} {thread.comments.length} comment{thread.comments.length > 1 ? 's' : ''}
         </button>
         {thread.resolved && <span className="tag">resolved</span>}
+        {first?.bot && <span className="tag">bot</span>}
         {!open && first && <span className="muted ellipsis">{first.author}: {plainPreview(first.body)}</span>}
         <span className="spacer" />
         <BusyButton className="link" busyLabel={thread.resolved ? 'Unresolving' : 'Resolving'} onClick={() => actions.onResolve(thread, !thread.resolved)}>

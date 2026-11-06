@@ -28,7 +28,7 @@ export function loadReview(repo: string, number: number, headSha: string): PrRev
   try {
     if (!existsSync(p)) return null
     const r = JSON.parse(readFileSync(p, 'utf8')) as PrReview
-    return r.version === VERSION ? r : null
+    return r.version === VERSION ? { ...r, findings: r.findings.map((f) => withFullPaths(f, [])) } : null
   } catch {
     return null
   }
@@ -41,6 +41,7 @@ Report only problems you can show in the code:
 - a behaviour change that production depends on with nothing (code or test) covering it
 Never report: style, naming, formatting, docs, "consider", refactors, generic advice, or anything you could not confirm.
 Check before you report: you can read the repository at the PR head with read-only tools. Open the callers, schemas, migrations and tests you need. If you are still unsure after looking, leave it out.
+Write every file reference with its full repository path (e.g. lib/app/orders/context.ex:120, never just context.ex:120), in the detail too.
 Each finding cites the line in the PR's new code where the problem is (the diffs are annotated with new-file line numbers: "+  120 |" or "   120 |") and the lines you read to confirm it.
 At most ${MAX_FINDINGS} findings, most severe first. No findings is a good answer for a sound PR.
 Then call every chunk listed under CHUNKS: does the human need to read it? The goal is that they read only what matters.
@@ -115,6 +116,23 @@ export function skipReason(files: ChangedFile[], hunks: Map<string, HunkWithText
 }
 
 const ORDER: Record<Risk, number> = { high: 0, medium: 1, low: 2 }
+
+/**
+ * Bare file names in a finding's detail ("orders.ex:120") written out in full, when the finding's own file, its
+ * evidence or the PR's files have exactly one file of that name.
+ */
+export function withFullPaths(f: ReviewFinding, prFiles: string[]): ReviewFinding {
+  const byName = new Map<string, Set<string>>()
+  for (const p of [f.path, ...f.evidence.map((e) => e.path), ...prFiles]) {
+    const name = p.split('/').pop()!
+    byName.set(name, (byName.get(name) ?? new Set()).add(p))
+  }
+  const detail = f.detail.replace(/(^|[^\w/.-])([\w.-]+\.\w+)(?=:\d)/g, (all, pre: string, name: string) => {
+    const full = byName.get(name)
+    return full?.size === 1 ? `${pre}${[...full][0]}` : all
+  })
+  return detail === f.detail ? f : { ...f, detail }
+}
 
 export async function generateReview(
   deps: GuideDeps,
@@ -199,6 +217,7 @@ export async function generateReview(
         ...(h ? { hunkHash: h.hash } : {})
       }
     })
+    .map((f) => withFullPaths(f, [...reviewed]))
 
   // Every chunk gets a call; a missing one, or one with a finding, needs you.
   const given = new Map((answer.chunks ?? []).map((c) => [c.id.trim(), c]))

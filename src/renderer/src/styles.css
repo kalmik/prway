@@ -16,6 +16,7 @@
   --risk-medium: #bf8700;
   --risk-low: #1a7f37;
   --focus-bg: rgba(191, 135, 0, 0.08);
+  --nav-bg: rgba(9, 105, 218, 0.12);
   color-scheme: light;
 }
 
@@ -38,6 +39,7 @@
     --risk-medium: #d29922;
     --risk-low: #3fb950;
     --focus-bg: rgba(210, 153, 34, 0.07);
+    --nav-bg: rgba(68, 147, 248, 0.16);
     color-scheme: dark;
   }
 }
@@ -1088,8 +1090,20 @@ button.link.danger {
   border-left: 3px solid #8250df;
   margin-left: 2px;
 }
+/* The line you jumped to: strong for a moment, then light, then fading out (see flashLine). */
 .nav-target-line {
-  background: var(--focus-bg);
+  background: var(--nav-bg);
+  transition: background 0.6s ease;
+}
+.nav-target-line.strong {
+  background: color-mix(in srgb, var(--nav-bg) 100%, var(--accent) 22%);
+}
+.nav-target-line.faint {
+  background: color-mix(in srgb, var(--nav-bg) 40%, transparent);
+}
+.nav-target-gutter {
+  border-left: 3px solid var(--accent);
+  margin-left: 2px;
 }
 .detached {
   padding: 4px 12px;
@@ -3220,4 +3234,28 @@ button .spinner {
   border-color: transparent;
   border-top-color: currentColor;
   border-right-color: currentColor;
+}
+
+/* Collapsed conversation entries: a one-line preview of the comment in the header. */
+.timeline-item .comment-meta {
+  min-width: 0;
+}
+.timeline-item .comment-meta > * {
+  flex-shrink: 0;
+}
+.timeline-item .comment-meta > .ellipsis {
+  flex-shrink: 1;
+}
+
+/* Under the PR title: the guide was made before the latest commits. */
+.stale-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--risk-medium);
+  background: var(--warn-bg);
+  border-radius: 6px;
 }

@@ -434,7 +434,14 @@ export function FileCard({
           )}
           <p className="small muted">
             {w.model}
-            {w.account ? ` · ${w.account}` : ''} · {timeAgo(w.createdAt)} ·{' '}
+            {w.account ? ` · ${w.account}` : ''} · {timeAgo(w.createdAt)}
+            {w.reusedFrom && (
+              <span title={`Made for commit ${w.reusedFrom.slice(0, 7)}; the new commits didn't change this file's changes, so it was kept`}>
+                {' '}
+                · from an earlier commit
+              </span>
+            )}{' '}
+            ·{' '}
             <button className="link" disabled={busy} onClick={() => wt.explain(file.path, true)}>
               regenerate
             </button>

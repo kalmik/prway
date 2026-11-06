@@ -77,3 +77,87 @@ export function languageFor(path: string): string {
   }
   return 'plaintext'
 }
+
+/** How long a jumped-to line stays marked. */
+const FLASH_MS = 30_000
+const flashes = new WeakMap<monaco.editor.ICodeEditor, () => void>()
+
+/**
+ * Marks the line you jumped to (go to definition, a link): strong at first, then a light highlight with a bar in
+ * the gutter and a mark in the scrollbar, fading out after 30 s. A new jump in the same editor replaces it.
+ */
+export function flashLine(editor: monaco.editor.ICodeEditor, line: number): void {
+  flashes.get(editor)?.()
+  const deco = editor.createDecorationsCollection()
+  const stage = (className: string) =>
+    deco.set([
+      {
+        range: new monaco.Range(line, 1, line, 1),
+        options: {
+          isWholeLine: true,
+          className,
+          linesDecorationsClassName: 'nav-target-gutter',
+          overviewRuler: { color: 'rgba(68, 147, 248, 0.9)', position: monaco.editor.OverviewRulerLane.Center }
+        }
+      }
+    ])
+  stage('nav-target-line strong')
+  const timers = [
+    setTimeout(() => stage('nav-target-line'), 1500),
+    setTimeout(() => stage('nav-target-line faint'), FLASH_MS - 5000),
+    setTimeout(() => stop(), FLASH_MS)
+  ]
+  const stop = () => {
+    timers.forEach(clearTimeout)
+    deco.clear()
+    if (flashes.get(editor) === stop) flashes.delete(editor)
+  }
+  flashes.set(editor, stop)
+}
+
+/** Monaco's diff view model (internal): it can unfold the hidden block a line is in. */
+type DiffViewModel = {
+  ensureModifiedLineIsVisible(line: number, preference: number, tx: undefined): void
+  ensureOriginalLineIsVisible(line: number, preference: number, tx: undefined): void
+}
+
+/**
+ * Scrolls a line into the middle and keeps it there: unfolds the block of unchanged lines hiding it (in a diff), then
+ * checks again for a second, since folds built just after the diff, or a late scroll restore, can move it away.
+ * Returns a function that stops the checks.
+ */
+export function revealLine(
+  editor: monaco.editor.ICodeEditor,
+  line: number,
+  diff?: { editor: monaco.editor.IStandaloneDiffEditor; side: 'LEFT' | 'RIGHT' }
+): () => void {
+  const unfold = () => {
+    if (!diff) return
+    try {
+      const vm = (diff.editor as unknown as { _diffModel?: { get(): DiffViewModel | undefined } })._diffModel?.get()
+      if (diff.side === 'LEFT') vm?.ensureOriginalLineIsVisible(line, 0, undefined)
+      else vm?.ensureModifiedLineIsVisible(line, 0, undefined)
+    } catch {
+      /* internal API changed: setPosition below still unfolds in most cases */
+    }
+  }
+  const go = () => {
+    unfold()
+    editor.setPosition({ lineNumber: line, column: 1 })
+    editor.revealLineInCenter(line)
+    // Unfolding changes the layout after this frame: center again once it has.
+    requestAnimationFrame(() => editor.revealLineInCenter(line))
+  }
+  const inView = () => editor.getVisibleRanges().some((r) => line >= r.startLineNumber && line <= r.endLineNumber)
+  go()
+  const timers = [150, 450, 1000].map((ms) => setTimeout(() => !inView() && go(), ms))
+  // You scrolled, clicked or typed: you are somewhere else on purpose.
+  const node = editor.getDomNode()
+  const events = ['wheel', 'mousedown', 'keydown'] as const
+  const stop = () => {
+    timers.forEach(clearTimeout)
+    events.forEach((e) => node?.removeEventListener(e, stop, true))
+  }
+  events.forEach((e) => node?.addEventListener(e, stop, { capture: true, passive: true }))
+  return stop
+}

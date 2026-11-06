@@ -3,8 +3,8 @@
 
 import { useState } from 'react'
 import type { ConversationItem } from '../../../shared/types'
-import { errorText, timeAgo } from '../util'
-import { Markdown } from './Markdown'
+import { errorText, timeAgo, useOpenChoice } from '../util'
+import { Markdown, plainPreview } from './Markdown'
 import { Loading } from './Loading'
 
 const STATE: Record<string, { text: string; className: string }> = {
@@ -65,37 +65,9 @@ export function ConversationPanel({
         </p>}
 
       <ol className="timeline">
-        {items?.map((item) => {
-          const state = item.state ? STATE[item.state] : undefined
-          const empty = !item.body.trim()
-          return (
-            <li key={item.id} className={`timeline-item ${item.kind}`}>
-              <div className="comment-meta small">
-                {item.authorAvatar ? <img className="avatar-sm" src={item.authorAvatar} alt="" /> : <span className="avatar-sm" />}
-                <strong>{item.author}</strong>
-                {item.kind === 'description' && <span className="muted">opened this PR</span>}
-                {state && <span className={`review-state ${state.className}`}>{state.text}</span>}
-                {!!item.inlineCount && (
-                  <span className="muted">
-                    with {item.inlineCount} inline comment{item.inlineCount > 1 ? 's' : ''}
-                  </span>
-                )}
-                <span className="muted">{timeAgo(item.createdAt)}</span>
-                <span className="spacer" />
-                <button className="link" onClick={() => onOpenUrl(item.url)}>
-                  GitHub ↗
-                </button>
-              </div>
-              {empty ? (
-                item.kind === 'description' && <p className="small muted">No description.</p>
-              ) : (
-                <div className="timeline-body">
-                  <Markdown text={item.body} onCodeRef={onCodeRef} onLink={onOpenUrl} />
-                </div>
-              )}
-            </li>
-          )
-        })}
+        {items?.map((item) => (
+          <TimelineItem key={item.id} item={item} onCodeRef={onCodeRef} onOpenUrl={onOpenUrl} />
+        ))}
       </ol>
 
       <div className="comment-box">
@@ -116,5 +88,58 @@ export function ConversationPanel({
         </div>
       </div>
     </div>
+  )
+}
+
+/** One entry; bot comments (CodeRabbit…) start collapsed, and your open/closed choice is kept. */
+function TimelineItem({
+  item,
+  onCodeRef,
+  onOpenUrl
+}: {
+  item: ConversationItem
+  onCodeRef: (path: string, line: number) => void
+  onOpenUrl: (url: string) => void
+}) {
+  const state = item.state ? STATE[item.state] : undefined
+  const empty = !item.body.trim()
+  const collapsible = item.kind !== 'description' && !empty
+  const [choice, setOpen] = useOpenChoice(`conv:${item.url}`, !item.bot)
+  const open = !collapsible || choice
+  return (
+    <li className={`timeline-item ${item.kind}`}>
+      <div className="comment-meta small">
+        {collapsible && (
+          <button className="link muted" onClick={() => setOpen(!open)} title={open ? 'Collapse' : 'Expand'}>
+            {open ? '▾' : '▸'}
+          </button>
+        )}
+        {item.authorAvatar ? <img className="avatar-sm" src={item.authorAvatar} alt="" /> : <span className="avatar-sm" />}
+        <strong>{item.author}</strong>
+        {item.bot && <span className="tag">bot</span>}
+        {item.kind === 'description' && <span className="muted">opened this PR</span>}
+        {state && <span className={`review-state ${state.className}`}>{state.text}</span>}
+        {!!item.inlineCount && (
+          <span className="muted">
+            with {item.inlineCount} inline comment{item.inlineCount > 1 ? 's' : ''}
+          </span>
+        )}
+        <span className="muted">{timeAgo(item.createdAt)}</span>
+        {!open && <span className="muted ellipsis">{plainPreview(item.body)}</span>}
+        <span className="spacer" />
+        <button className="link" onClick={() => onOpenUrl(item.url)}>
+          GitHub ↗
+        </button>
+      </div>
+      {empty ? (
+        item.kind === 'description' && <p className="small muted">No description.</p>
+      ) : (
+        open && (
+          <div className="timeline-body">
+            <Markdown text={item.body} onCodeRef={onCodeRef} onLink={onOpenUrl} />
+          </div>
+        )
+      )}
+    </li>
   )
 }

@@ -4,7 +4,7 @@
 import { Editor } from '@monaco-editor/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangedFile, DraftComment } from '../../../shared/types'
-import { languageFor, monaco, MONO_FONT } from '../monaco'
+import { flashLine, languageFor, monaco, MONO_FONT, revealLine } from '../monaco'
 import { errorText, useStored } from '../util'
 import { buildTree, compact, type Dir } from '../fileTree'
 import { attachCodeNav, linesRef, type NavHandlers } from './codeNav'
@@ -535,15 +535,15 @@ function CodeEditor({
   useEffect(() => {
     if (!editor || !ready || !line || handledLine.current === line.seq) return
     handledLine.current = line.seq
+    let stop = () => {}
     const id = requestAnimationFrame(() => {
-      editor.revealLineInCenter(line.line)
-      editor.setPosition({ lineNumber: line.line, column: 1 })
-      const deco = editor.createDecorationsCollection([
-        { range: new monaco.Range(line.line, 1, line.line, 1), options: { isWholeLine: true, className: 'nav-target-line' } }
-      ])
-      setTimeout(() => deco.clear(), 1500)
+      stop = revealLine(editor, line.line)
+      flashLine(editor, line.line)
     })
-    return () => cancelAnimationFrame(id)
+    return () => {
+      cancelAnimationFrame(id)
+      stop()
+    }
   }, [editor, ready, line?.seq])
 
   function lineMenuItems(m: LineMenuAt) {

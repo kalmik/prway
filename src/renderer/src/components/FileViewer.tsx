@@ -2,7 +2,7 @@
 
 import { Editor } from '@monaco-editor/react'
 import { useEffect, useRef, useState } from 'react'
-import { languageFor, monaco, MONO_FONT } from '../monaco'
+import { flashLine, languageFor, monaco, MONO_FONT } from '../monaco'
 import { errorText } from '../util'
 import { attachCodeNav, type NavHandlers } from './codeNav'
 import { Loading } from './Loading'
@@ -60,10 +60,7 @@ export function FileViewer({
     const id = requestAnimationFrame(() => {
       editor.revealLineInCenter(line)
       editor.setPosition({ lineNumber: line, column: 1 })
-      const deco = editor.createDecorationsCollection([
-        { range: new monaco.Range(line, 1, line, 1), options: { isWholeLine: true, className: 'nav-target-line' } }
-      ])
-      setTimeout(() => deco.clear(), 1500)
+      flashLine(editor, line)
     })
     return () => cancelAnimationFrame(id)
   }, [editor, text, line])

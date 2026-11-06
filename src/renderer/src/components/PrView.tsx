@@ -484,7 +484,45 @@ export function PrView({
     outside ? { path: outside.path, line: outside.line, outside: true } : file ? { path: file.path, line: lastLine.current, outside: false } : null
 
   /** Opens a file at a line: in the code view when it is shown, else in the diff when the PR changed it, else read-only. */
+  // Every file at the PR head, to find what a short reference ("orders.ex:120") means. Loaded once per head.
+  const repoFiles = useRef<{ head: string; list: Promise<string[]> } | null>(null)
+  /**
+   * The repository path a reference means: as written when it exists, else the file whose path ends with it (the AI
+   * often cites bare file names). Among several, the PR's changed files first, then the one nearest the open file.
+   */
+  async function resolvePath(path: string): Promise<string> {
+    const clean = path.replace(/^\.?\//, '')
+    if (!tree || tree.files.some((f) => f.path === clean)) return clean
+    if (repoFiles.current?.head !== tree.headSha) {
+      const list = api.code.listFiles(repo, number)
+      list.catch(() => (repoFiles.current = null))
+      repoFiles.current = { head: tree.headSha, list }
+    }
+    const all = await repoFiles.current!.list.catch(() => [] as string[])
+    if (all.includes(clean)) return clean
+    const matches = [...tree.files.map((f) => f.path), ...all].filter((p) => p.endsWith(`/${clean}`))
+    if (!matches.length) return clean
+    const changed = new Set(tree.files.map((f) => f.path))
+    const near = file?.path ?? tree.files[0]?.path ?? ''
+    const shared = (p: string) => {
+      const a = p.split('/')
+      const b = near.split('/')
+      let n = 0
+      while (n < a.length - 1 && a[n] === b[n]) n++
+      return n
+    }
+    return matches.sort((a, b) => Number(changed.has(b)) - Number(changed.has(a)) || shared(b) - shared(a) || a.length - b.length)[0]
+  }
+
   function openAt(path: string, line: number | null, side: DiffSide = 'RIGHT', remember = true, toDiff = false) {
+    if (tree && !tree.files.some((f) => f.path === path)) {
+      void resolvePath(path).then((p) => openExact(p, line, side, remember, toDiff))
+      return
+    }
+    openExact(path, line, side, remember, toDiff)
+  }
+
+  function openExact(path: string, line: number | null, side: DiffSide, remember: boolean, toDiff: boolean) {
     const target = tree?.files.find((f) => f.path === path)
     // Files the PR did not change open in the code view, with a way back to the review.
     if ((codeView || !target) && !toDiff) {
@@ -508,7 +546,7 @@ export function PrView({
       if (target.path !== file?.path) setFile(target)
       if (line) {
         lastLine.current = line
-        setReveal({ path, line, side, seq: ++navSeq })
+        setReveal({ path, line, side, seq: ++navSeq, flash: remember })
       }
     } else {
       setOutside({ path, line: line ?? 1 })
@@ -981,6 +1019,17 @@ export function PrView({
             </p>
           )}
           <ActivityStrip items={activity} />
+          {stale && !guideBusy && (
+            <div className="stale-bar small" role="status">
+              <span className="spacer">
+                ⚠ New commits since the guide was made: its reading order, notes{autoReview ? ' and the AI review' : ''} may not match the code.
+              </span>
+              {guideError && <span className="error">{guideError}</span>}
+              <button className="small" onClick={() => void generateGuide()} title="Make the guide again for the latest commit (one AI request)">
+                Regenerate guide{autoReview ? ' & AI review' : ''}
+              </button>
+            </div>
+          )}
         </div>
         <div className="row nowrap">
           <div className="segmented" role="tablist" title="Guided review, the classic file list, or the whole repository like an IDE">

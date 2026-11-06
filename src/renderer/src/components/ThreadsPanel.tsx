@@ -3,8 +3,8 @@
 
 import { useEffect, useState } from 'react'
 import type { ReviewThread } from '../../../shared/types'
-import { errorText, timeAgo } from '../util'
-import { Markdown } from './Markdown'
+import { errorText, timeAgo, useOpenChoice } from '../util'
+import { Markdown, plainPreview } from './Markdown'
 import { BusyButton } from './Loading'
 
 export type ThreadGroup = 'you' | 'others' | 'open' | 'resolved'
@@ -71,6 +71,9 @@ function ThreadCard({ t, isNew, props }: { t: ReviewThread; isNew: (id: number) 
   const hidden = t.comments.length > 3 && !showAll ? t.comments.length - 2 : 0
   const shown = hidden ? t.comments.slice(-2) : t.comments
   const newCount = t.comments.filter((c) => isNew(c.id)).length
+  const first = t.comments[0]
+  // Same choice as the thread in the diff; bot threads (CodeRabbit…) start collapsed.
+  const [open, setOpen] = useOpenChoice(`thread:${t.id}`, !t.resolved && !first?.bot)
 
   async function send() {
     if (!reply.trim()) return
@@ -90,6 +93,9 @@ function ThreadCard({ t, isNew, props }: { t: ReviewThread; isNew: (id: number) 
   return (
     <li className={`thread-card ${t.resolved ? 'resolved' : ''}`}>
       <div className="thread-card-head small">
+        <button className="link muted" onClick={() => setOpen(!open)} title={open ? 'Collapse' : 'Expand'}>
+          {open ? '▾' : '▸'}
+        </button>
         <button
           className="link code-ref"
           onClick={() => (t.line ? props.onShowInCode(t) : props.onOpenFile(t.path))}
@@ -104,7 +110,10 @@ function ThreadCard({ t, isNew, props }: { t: ReviewThread; isNew: (id: number) 
           </span>
         )}
         {newCount > 0 && <span className="tag new-tag">{newCount} new</span>}
-        <span className="muted ellipsis">{t.path.split('/').slice(0, -1).join('/')}</span>
+        {first?.bot && <span className="tag">bot</span>}
+        <span className="muted ellipsis">
+          {open ? t.path.split('/').slice(0, -1).join('/') : first ? `${first.author}: ${plainPreview(first.body)}` : ''}
+        </span>
         <span className="spacer" />
         <BusyButton className="link" busyLabel={t.resolved ? 'Unresolving' : 'Resolving'} onClick={() => props.onResolve(t, !t.resolved)}>
           {t.resolved ? 'Unresolve' : 'Resolve'}
@@ -116,6 +125,8 @@ function ThreadCard({ t, isNew, props }: { t: ReviewThread; isNew: (id: number) 
         )}
       </div>
 
+      {open && (
+        <>
       {(t.outdated || !t.line) && <Snippet hunk={t.diffHunk} />}
 
       {hidden > 0 && (
@@ -159,6 +170,8 @@ function ThreadCard({ t, isNew, props }: { t: ReviewThread; isNew: (id: number) 
         <button className="reply-stub small" onClick={() => setWriting(true)}>
           Reply…
         </button>
+      )}
+        </>
       )}
     </li>
   )

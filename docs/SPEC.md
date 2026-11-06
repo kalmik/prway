@@ -103,6 +103,9 @@ mechanical edits, checking the change against the stated intent, and a knowledge
     as drafts. Outdated threads are listed above the diff.
   - Conversation tab: the description, general PR comments and review summaries (with their state) in date order;
     post a general comment; Refresh reloads it and the inline threads.
+  - Comments by bot accounts (CodeRabbit, Copilot…) start collapsed to a one-line preview, in the diff, the Threads
+    tab and the Conversation tab, with a "bot" tag. Opening or collapsing a thread or entry is remembered (across tabs,
+    views and restarts); a thread shares one choice wherever it shows.
 - Code navigation at the PR head: ⌘/Ctrl+click or F12 for definitions, Shift+F12 for references, also in files the
   PR did not change (opened read-only), with a Back button. Built on `git grep` plus per-language definition
   patterns (Elixir, TS/JS, Python, Go, Ruby, Rust, JVM languages, SQL).
@@ -234,7 +237,10 @@ mechanical edits, checking the change against the stated intent, and a knowledge
     are always sent first
   - Settings → Learned: everything marked for a repository, with reasons, a "with a reason" filter and delete
 - Walkthroughs are made per file on demand (and the next file in the background), with a capped effort for speed, and
-  saved per head commit in `~/.prway/guides/.../files/<sha>/`. References to files that don't exist are dropped.
+  saved per head commit in `~/.prway/guides/.../files-v3/<sha>/`. References to files that don't exist are dropped.
+  After new commits, a file whose chunks are the same as at an earlier head (same changed lines, same order) reuses
+  that walkthrough instead of asking again ("from an earlier commit" in its footer); regenerate still asks fresh. The
+  guide and the AI review always run over the whole PR again.
 - Approvals are keyed by the hunk's changed lines, so they survive new commits that don't touch that hunk; a file
   with every chunk approved counts as viewed.
 - Finish step: what's not approved yet, your pending comments, open threads, the guide's questions, and the submit form.
@@ -283,7 +289,8 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 
 - Loading feedback (`components/Loading.tsx`): every wait shows a spinner with what it is waiting for; slow AI work
   counts seconds. Opening a PR reports its steps (waiting for other git work, cloning, fetching, checking out,
-  comparing). Reopening a PR whose head GitHub reports as the commit already fetched (same base branch) skips the
+  comparing). When the PR got commits after the guide was made, a bar under the PR title says so, with Regenerate
+  guide (& AI review), wherever you are in the PR. Reopening a PR whose head GitHub reports as the commit already fetched (same base branch) skips the
   fetch and the checkout, so it is local work only. Under the PR title, an activity strip lists the work running for the PR wherever you are (refresh, guide,
   AI review, explaining files, Background, chat), each with its seconds and a click to where it shows. Resolve and
   Unresolve show a spinner until GitHub answers.

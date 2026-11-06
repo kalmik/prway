@@ -4,7 +4,7 @@
 import { DiffEditor } from '@monaco-editor/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangedFile, DiffSide, DraftComment, FileDiff, GuideFile, HintFeedback, HintVerdict, Hunk, HunkAuto, ReviewFinding, ReviewThread, WorktreeInfo } from '../../../shared/types'
-import { languageFor, monaco, MONO_FONT } from '../monaco'
+import { flashLine, languageFor, monaco, MONO_FONT, revealLine } from '../monaco'
 import { attachCodeNav, linesRef, type NavHandlers } from './codeNav'
 import { attachLineMenu, copyReference, LineMenu, type LineMenuAt } from './LineMenu'
 import { LineComments, useViewZones, type CommentActions, type ZoneSpec } from './Comments'
@@ -21,6 +21,8 @@ export interface RevealRequest {
   side: DiffSide
   /** Changes on every request, so asking twice for the same line still scrolls. */
   seq: number
+  /** A jump (definition, link): mark the line for a while. Not for moving between chunks. */
+  flash?: boolean
 }
 
 interface Composing {
@@ -492,13 +494,17 @@ export function DiffPane(props: Props) {
         const more = document.createElement('button')
         more.className = 'link small'
         more.textContent = '+10 lines'
-        more.title = 'Show 10 more unchanged lines next to the change'
+        more.title = 'Show 10 more unchanged lines on each side (next to the change above and the change below)'
         more.onclick = (e) => {
           e.stopPropagation()
-          // At the start of the file the change is below: reveal from the bottom edge, else from the top edge.
-          const box = root.getBoundingClientRect()
-          const atStart = bar.getBoundingClientRect().top - (box.top + modified.getTopForLineNumber(1) - modified.getScrollTop()) < 4
-          click(bar.querySelector(atStart ? ':scope > .bottom' : ':scope > .top'))
+          // Where the fold is: at the start of the file only the change below it has a side to grow (its top edge),
+          // at the end only the change above; in between, both.
+          const top = bar.getBoundingClientRect().top - root.getBoundingClientRect().top + modified.getScrollTop()
+          const lineHeight = modified.getOption(monaco.editor.EditorOption.lineHeight)
+          const atStart = top - modified.getTopForLineNumber(1) < 4
+          const atEnd = top > modified.getTopForLineNumber(modified.getModel()?.getLineCount() ?? 1) - lineHeight
+          if (!atStart) click(bar.querySelector(':scope > .top'))
+          if (!atEnd) click(bar.querySelector(':scope > .bottom'))
         }
         const all = document.createElement('button')
         all.className = 'link small'
@@ -530,18 +536,22 @@ export function DiffPane(props: Props) {
     const ed = reveal.side === 'LEFT' && sideBySide ? original : modified
     if (!ed) return
     let frame = 0
+    let stopHolding = () => {}
     const go = () => {
       frame = requestAnimationFrame(() => {
         handledReveal.set(`head/${tree.headSha}/${file.path}`, reveal.seq)
-        ed.revealLineInCenter(reveal.line)
-        ed.setPosition({ lineNumber: reveal.line, column: 1 })
+        stopHolding = revealLine(ed, reveal.line, { editor: de, side: ed === original ? 'LEFT' : 'RIGHT' })
+        if (reveal.flash) flashLine(ed, reveal.line)
         // Revealing a line near the top can leave the bar above it cut off.
         requestAnimationFrame(() => showBanner.current())
       })
     }
     if (de.getLineChanges()) {
       go()
-      return () => cancelAnimationFrame(frame)
+      return () => {
+        cancelAnimationFrame(frame)
+        stopHolding()
+      }
     }
     const sub = de.onDidUpdateDiff(() => {
       sub.dispose()
@@ -550,6 +560,7 @@ export function DiffPane(props: Props) {
     return () => {
       sub.dispose()
       cancelAnimationFrame(frame)
+      stopHolding()
     }
   }, [reveal, modified, original, file.path, sideBySide, tree.headSha])
 
