@@ -369,8 +369,9 @@ mechanical edits, checking the change against the stated intent, and a knowledge
   `.app` bundle from the release `.zip`, Windows runs the NSIS installer silently, Linux replaces the AppImage; deb
   installs and apps run from the disk image only get a link to the release page.
 - **macOS:** builds (`.dmg`/`.zip`, Apple silicon and Intel) and runs, not code-signed or notarized yet: the bundle is
-  ad-hoc signed after packaging (`scripts/adhoc-sign.cjs`), so a download opens with right-click → Open the first time
-  instead of being called damaged. `safeStorage` uses the Keychain, and the git from Xcode Command Line Tools is enough.
+  ad-hoc signed after packaging (`scripts/adhoc-sign.cjs`), so macOS no longer calls a download damaged. The first launch
+  still needs System Settings → Privacy & Security → Open Anyway (right-click → Open no longer works since macOS 15);
+  self updates skip that, since files the app downloads aren't quarantined. `safeStorage` uses the Keychain, and the git from Xcode Command Line Tools is enough.
   - An app opened from Finder or the Dock doesn't get your shell's `PATH`: the packaged app takes it from your login
     shell and adds the usual install folders (`src/main/shellPath.ts`), so `claude` and Homebrew's git are found.
     `PRWAY_CLAUDE_BIN=/path/to/claude` still overrides.

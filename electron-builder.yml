@@ -21,7 +21,7 @@ mac:
     - target: zip
       arch: [arm64, x64]
   # No certificate yet, so electron-builder skips signing and scripts/adhoc-sign.cjs ad-hoc signs the bundle;
-  # users right-click → Open the first time.
+  # users click Open Anyway in System Settings → Privacy & Security the first time.
   identity: null
 dmg:
   title: PRway

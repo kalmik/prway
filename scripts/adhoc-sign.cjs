@@ -1,6 +1,6 @@
 // Ad-hoc signs the macOS app after packaging. Without a seal over the whole bundle, macOS calls a
-// downloaded unsigned app "damaged" and offers no way to open it; with it, users get the usual
-// "unidentified developer" prompt and can choose Open. Replace with real signing once we have a certificate.
+// downloaded unsigned app "damaged" and offers no way to open it; with it, users get the "can't verify the
+// developer" prompt and can allow it in System Settings → Privacy & Security. Replace with real signing once we have a certificate.
 const { execFileSync } = require('node:child_process')
 const path = require('node:path')
 
