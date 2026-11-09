@@ -689,6 +689,21 @@ export interface OpenPrRequest {
 }
 
 /** The API the preload script exposes to the UI as `window.prway`. */
+/** Self update from the latest GitHub release. */
+export interface UpdateState {
+  status: 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'ready' | 'installing' | 'error'
+  /** Running version. */
+  current: string
+  latest?: string
+  releaseUrl?: string
+  /** 0..1 while downloading. */
+  progress?: number
+  error?: string
+  /** Why this install can't update itself; the UI then links to the release page. */
+  manualOnly?: string
+  checkedAt?: string
+}
+
 export interface PrwayApi {
   auth: {
     state(): Promise<AuthState>
@@ -823,6 +838,15 @@ export interface PrwayApi {
     save(repo: string | null, layer: PromptLayer): Promise<PromptSettingsView>
     /** The system prompt as it would be sent for this repo. */
     preview(repo: string | null, kind: PromptKind): Promise<string>
+  }
+  updates: {
+    state(): Promise<UpdateState>
+    check(): Promise<UpdateState>
+    /** Downloads the latest release for this system. */
+    download(): Promise<void>
+    /** Quits PRway, installs the downloaded version and starts it. */
+    install(): Promise<void>
+    onState(cb: (s: UpdateState) => void): () => void
   }
   openExternal(url: string): Promise<void>
   onNotifications(cb: (items: PrNotification[]) => void): () => void

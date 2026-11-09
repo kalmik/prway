@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, Notification, shell } from 'electron'
 import { join } from 'node:path'
 import { fixPath } from './shellPath'
+import { Updater } from './updater'
 import { checkSetup, fixGit, installClaude, openClaudeLogin } from './setup'
 import type {
   AiAccount,
@@ -174,6 +175,8 @@ function startPoller(): void {
   poller.start()
 }
 
+const updater = new Updater((s) => win?.webContents.send('updates:state', s))
+
 // ---- IPC: every function the UI can call (see PrwayApi in shared/types.ts) ----
 
 function registerIpc(): void {
@@ -183,6 +186,11 @@ function registerIpc(): void {
   // UI state: read once, synchronously, before the UI first renders; then written on every change.
   ipcMain.on('state:loadAll', (e) => (e.returnValue = loadUiState()))
   ipcMain.on('state:set', (_e, key: string, value: unknown) => setUiState(key, value))
+
+  handle('updates:state', () => updater.get())
+  handle('updates:check', () => updater.check())
+  handle('updates:download', () => updater.download())
+  handle('updates:install', () => updater.install())
 
   handle('auth:state', () => authState())
   handle('auth:startDeviceFlow', () => startDeviceFlow())
@@ -453,6 +461,7 @@ app.whenReady().then(async () => {
   }
 
   createWindow()
+  updater.start()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

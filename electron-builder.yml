@@ -9,6 +9,8 @@ files:
   - out/**
   - package.json
 # Same names every version, so https://github.com/kalmik/prway/releases/latest/download/<name> always works (see site/).
+afterPack: scripts/adhoc-sign.cjs
+
 artifactName: ${productName}-${os}-${arch}.${ext}
 
 mac:
@@ -18,7 +20,8 @@ mac:
       arch: [arm64, x64]
     - target: zip
       arch: [arm64, x64]
-  # Not signed or notarized yet: users right-click → Open the first time.
+  # No certificate yet, so electron-builder skips signing and scripts/adhoc-sign.cjs ad-hoc signs the bundle;
+  # users right-click → Open the first time.
   identity: null
 dmg:
   title: PRway

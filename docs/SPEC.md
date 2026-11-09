@@ -364,8 +364,13 @@ mechanical edits, checking the change against the stated intent, and a knowledge
 ## 8. Platform notes
 
 - **Linux:** main development platform. Works.
-- **macOS:** builds (`.dmg`/`.zip`, Apple silicon and Intel) and runs, not code-signed or notarized yet (right-click →
-  Open the first time). `safeStorage` uses the Keychain, and the git from Xcode Command Line Tools is enough.
+- **Updates:** the packaged app checks the latest GitHub release on startup and every 6 hours; a chip in the top bar
+  offers it, downloads it (size and sha256 checked) and restarts into it (`src/main/updater.ts`). macOS swaps the
+  `.app` bundle from the release `.zip`, Windows runs the NSIS installer silently, Linux replaces the AppImage; deb
+  installs and apps run from the disk image only get a link to the release page.
+- **macOS:** builds (`.dmg`/`.zip`, Apple silicon and Intel) and runs, not code-signed or notarized yet: the bundle is
+  ad-hoc signed after packaging (`scripts/adhoc-sign.cjs`), so a download opens with right-click → Open the first time
+  instead of being called damaged. `safeStorage` uses the Keychain, and the git from Xcode Command Line Tools is enough.
   - An app opened from Finder or the Dock doesn't get your shell's `PATH`: the packaged app takes it from your login
     shell and adds the usual install folders (`src/main/shellPath.ts`), so `claude` and Homebrew's git are found.
     `PRWAY_CLAUDE_BIN=/path/to/claude` still overrides.

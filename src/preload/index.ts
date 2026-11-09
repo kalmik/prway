@@ -2,7 +2,7 @@
 // The UI never gets direct access to Node, git or the GitHub token.
 
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { PrwayApi, OpenPrRequest, PrNotification } from '../shared/types'
+import type { PrwayApi, OpenPrRequest, PrNotification, UpdateState } from '../shared/types'
 
 const call =
   (channel: string) =>
@@ -109,6 +109,13 @@ const api: PrwayApi = {
     get: call('prompts:get'),
     save: call('prompts:save'),
     preview: call('prompts:preview')
+  },
+  updates: {
+    state: call('updates:state'),
+    check: call('updates:check'),
+    download: call('updates:download'),
+    install: call('updates:install'),
+    onState: (cb) => subscribe<UpdateState>('updates:state', cb)
   },
   openExternal: call('openExternal'),
   onNotifications: (cb) => subscribe<PrNotification[]>('notifications', cb),

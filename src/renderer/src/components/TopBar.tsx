@@ -3,6 +3,7 @@ import type { AccessIssue, GhUser, PrNotification, Repo } from '../../../shared/
 import { errorText, timeAgo } from '../util'
 import { SettingsDialog, type SettingsTab } from './SettingsDialog'
 import { Loading } from './Loading'
+import { UpdateButton } from './UpdateButton'
 
 const api = window.prway
 
@@ -152,6 +153,8 @@ export function TopBar({ user, repo, onSelectRepo, notifications, onOpenNotifica
       </div>
 
       <div className="spacer" />
+
+      <UpdateButton />
 
       <div className="dropdown">
         <button className="bell" title="Pull request notifications" onClick={() => setBellOpen((o) => !o)}>
